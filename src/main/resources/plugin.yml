@@ -1,0 +1,18 @@
+name: TinyWatch
+version: 1.1.0
+main: com.tinyaii.tinywatch.TinyWatch
+api-version: '1.13'
+author: TinyAII
+description: 网页监控面板 - 实时看玩家坐标/血量与服务器负载，带玩家操作日志。零依赖
+website: https://github.com/TinyAII/TinyWatch
+
+commands:
+  watch:
+    description: TinyWatch 网页监控面板
+    usage: /watch <状态|重载|密码|帮助>
+    aliases: [tw, 监控]
+
+permissions:
+  tinywatch.admin:
+    description: 管理权限（查看地址、重载配置、查看和重置密码）
+    default: op

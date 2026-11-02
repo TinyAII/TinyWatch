@@ -1,0 +1,19 @@
+# 构建产物
+target/
+build.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# 运行期生成的数据（服务器上的，不应该进仓库）
+plugins/
+*.yml.bak
+
+# 系统
+.DS_Store
+Thumbs.db

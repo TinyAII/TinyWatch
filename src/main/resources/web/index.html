@@ -1,0 +1,3456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TinyWatch 监控面板</title>
+<style>
+:root{
+  --bg:#f4f6f9; --card:#fff; --text:#16202e; --muted:#6b7a8d;
+  --line:#e3e8ef; --accent:#0d9488; --accent-soft:#ccfbf1;
+  --ok:#059669; --warn:#d97706; --danger:#dc2626;
+  --shadow:0 1px 3px rgba(16,32,48,.07),0 1px 2px rgba(16,32,48,.04);
+}
+html[data-theme="dark"]{
+  --bg:#0d1520; --card:#16202e; --text:#e6edf5; --muted:#8b9bb0;
+  --line:#243044; --accent:#2dd4bf; --accent-soft:#134e4a;
+  --ok:#34d399; --warn:#fbbf24; --danger:#f87171;
+  --shadow:0 1px 3px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text);
+  font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  padding:16px; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1320px;margin:0 auto}
+.hide{display:none!important}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);
+  color:var(--text);border-radius:8px;padding:6px 12px;transition:.15s}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+/* 危险操作（封禁 / 踢出）常态就带一点红，避免和「治疗」长得一样 */
+button.danger{color:var(--danger);border-color:rgba(220,38,38,.32)}
+button.danger:hover{background:rgba(220,38,38,.06);border-color:var(--danger);color:var(--danger)}
+input,select{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--text);
+  border-radius:8px;padding:6px 10px;outline:none;width:100%}
+input:focus,select:focus{border-color:var(--accent)}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+
+/* ── 登录 ── */
+#login{max-width:380px;margin:14vh auto;background:var(--card);border:1px solid var(--line);
+  border-radius:14px;padding:30px;box-shadow:var(--shadow)}
+#login h1{font-size:19px;font-weight:650;margin-bottom:4px}
+#login p{color:var(--muted);font-size:13px;margin-bottom:20px}
+#login input{margin-bottom:12px}
+#login button{width:100%;background:var(--accent);color:#fff;border-color:var(--accent);
+  padding:9px;font-weight:600}
+#login button:hover{opacity:.9;color:#fff}
+#loginErr{color:var(--danger);font-size:13px;margin-top:10px;min-height:18px}
+
+/* ── 顶栏 ── */
+header{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.logo{font-size:17px;font-weight:700;letter-spacing:-.2px}
+.logo span{color:var(--accent)}
+.title-sub{color:var(--muted);font-size:13px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--danger);display:inline-block;
+  margin-right:5px;vertical-align:1px}
+.dot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(5,150,105,.15)}
+header .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+
+/* ── 预警横幅 ── */
+#alertBar{margin-bottom:12px;display:flex;flex-direction:column;gap:6px}
+.alert{display:flex;align-items:center;gap:8px;font-size:13px;padding:8px 14px;
+  border-radius:9px;border:1px solid}
+.alert i{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 auto;
+  font-style:normal}
+.alert.warn{background:#fffbeb;border-color:#fde68a;color:#92400e}
+.alert.bad{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+html[data-theme="dark"] .alert.warn{background:#3a2a08;border-color:#78350f;color:#fcd34d}
+html[data-theme="dark"] .alert.bad{background:#411717;border-color:#7f1d1d;color:#fca5a5}
+
+/* ── 轨迹 ── */
+.trailwrap{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.trailhead{display:flex;align-items:center;justify-content:space-between;
+  font-size:12px;color:var(--muted);margin-bottom:6px}
+.trailhead button{padding:3px 10px;font-size:12px}
+#qTrail{display:block;width:100%;height:160px;background:var(--bg);border-radius:8px}
+
+/* ── Tab ── */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.tab{background:none;border:none;border-bottom:2px solid transparent;border-radius:0;
+  padding:9px 18px;color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;
+  transition:color .15s,border-color .15s}
+.tab:hover{color:var(--text);background:none}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.pane{animation:pin .18s ease}
+@keyframes pin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.live{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);
+  padding:5px 11px;background:var(--card);border:1px solid var(--line);border-radius:20px}
+.live .mono{font-variant-numeric:tabular-nums;color:var(--text);font-weight:600}
+.live .sep{margin:0 1px}
+
+/* 顶部这一条与下面的两栏共用同一套列宽，Tab 才会和右边那张卡左边对齐 */
+.pback{display:grid;grid-template-columns:264px minmax(0,1fr);gap:12px;
+  align-items:center;margin-bottom:12px}
+.pback > button{justify-self:start;padding:6px 14px}
+.pback-right{display:flex;align-items:center;gap:12px;min-width:0}
+
+/* 详情页二级 Tab：挂在「返回玩家列表」这一条上 */
+.ptabs{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);
+  background:var(--card);border-radius:10px;box-shadow:var(--shadow)}
+.ptab{background:none;border:none;border-radius:7px;padding:5px 15px;font-size:13px;
+  font-weight:500;color:var(--muted);line-height:1.45;transition:.12s}
+.ptab:hover{background:var(--bg);color:var(--text);border:none}
+.ptab.on{background:var(--accent);color:#fff}
+.ptab.on:hover{color:#fff}
+.pback .hint-right{margin-left:auto}
+
+/* ── 玩家详情页（左列表 + 右整块）── */
+/* 左栏贴顶、内部自己滚；右栏不设高度，跟整页一起上下滚。
+   之前右栏给了 max-height+overflow:hidden，内容超长会被直接切掉且没有滚动条 —— 就是「不能上下滑动」的原因。 */
+.pview{display:grid;grid-template-columns:264px minmax(0,1fr);gap:12px;align-items:start}
+.pview > aside.card{position:sticky;top:12px;max-height:calc(100vh - 32px);
+  display:flex;flex-direction:column;overflow:hidden}
+.pview > aside.card h2{flex:0 0 auto}
+.psearch{flex:0 0 auto;padding:9px 12px;border-bottom:1px solid var(--line)}
+.psearch input{padding:6px 10px;font-size:13px}
+.pview .plist{flex:1 1 auto;min-height:0;overflow:auto;max-height:none}
+
+/* 列表条目：默认白底，只在悬停/选中时轻微着色 */
+.pitem{padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer;
+  background:var(--card);transition:background .12s}
+.pitem:last-child{border-bottom:none}
+.pitem:hover{background:var(--bg)}
+.pitem.sel{background:rgba(13,148,136,.06)}
+.pitem.sel .nm{color:var(--accent)}
+.pitem .top{display:flex;align-items:center;gap:8px}
+.pitem .av{width:24px;height:24px;border-radius:6px;background:var(--bg);color:var(--muted);
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex:0 0 auto}
+.pitem.sel .av{background:var(--accent-soft);color:var(--accent)}
+.pitem .nm{font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:13px}
+.pitem .sub{font-size:11px;color:var(--muted);margin-top:3px;display:flex;
+  align-items:center;justify-content:space-between;gap:8px}
+.pitem .hpb{width:32px;height:3px;background:var(--line);border-radius:2px;overflow:hidden;flex:0 0 auto}
+.pitem .hpb i{display:block;height:100%;background:var(--danger)}
+
+/* 右侧整块详情：跟页面一起滚，不自己限高 */
+.pmain{min-width:0}
+.pview > .pmain.card{max-height:none;overflow:visible}
+.phead{display:flex;align-items:center;gap:13px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.phead .av{width:42px;height:42px;border-radius:11px;background:var(--accent-soft);
+  color:var(--accent);display:flex;align-items:center;justify-content:center;
+  font-size:18px;font-weight:600;flex:0 0 auto}
+.phead .nm{font-size:17px;font-weight:600;line-height:1.3}
+.phead .uuid{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 三段并排 + 整行区块，用 1px 间隙当分割线 */
+.pgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;
+  background:var(--line);border-bottom:1px solid var(--line)}
+.pbox{background:var(--card);padding:14px 20px;min-width:0}
+.pbox.full{grid-column:1 / -1}
+.pbox h4{font-size:11px;color:var(--muted);letter-spacing:.4px;margin:0 0 9px;font-weight:500}
+.pbox .kv{padding:3px 0;font-size:13px}
+
+/* 详情页「日志」页签的筛选条 */
+/* 世界页左侧条目 */
+.witem{padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.witem:hover{background:var(--bg)}
+.witem.on{background:var(--accent-soft)}
+.witem .wn{font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px}
+.witem .wn .name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.wgrid .ofm{grid-template-columns:190px minmax(0,1fr) auto}
+.wgrid .ofm label{white-space:normal;line-height:1.35}
+.witem .wd{font-size:11px;color:var(--muted);margin-top:3px;
+  font-variant-numeric:tabular-nums}
+.witem .wenv{flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:4px;
+  background:var(--bg);color:var(--muted);font-weight:500}
+
+.pfilters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
+.pfilters input{width:160px;padding:4px 9px;font-size:12px}
+.plogrow{display:grid;grid-template-columns:56px 60px minmax(0,1fr);gap:10px;
+  padding:6px 0;border-bottom:1px solid var(--line);font-size:13px;align-items:baseline}
+.plogrow:last-child{border-bottom:none}
+
+/* ── 玩家详细表格 ── *//* ── 玩家详细表格 ── */
+.ptable-wrap{overflow:auto;max-height:calc(100vh - 260px)}
+.ptable{width:100%;border-collapse:collapse;font-size:13px}
+.ptable th{position:sticky;top:0;background:var(--card);z-index:1}
+.ptable td{padding:8px 14px;border-bottom:1px solid var(--line);white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.ptable tr.row{cursor:pointer}
+.ptable tr.row:hover{background:var(--accent-soft)}
+.ptable .pnm{font-weight:600}
+.ptable .dim{color:var(--muted)}
+.ptable tr.clickable{cursor:pointer}
+.ptable tr.clickable:hover{background:var(--bg)}
+.ptable tr.detail-row td{background:var(--bg);padding:10px 16px;font-size:12px;
+  color:var(--muted);line-height:1.7;white-space:normal}
+.ptable tr.detail-row b{color:var(--text);font-weight:600}
+.ptable th.chk,.ptable td.chk{width:34px;padding:8px 0 8px 14px;text-align:left}
+.ptable input[type="checkbox"]{width:14px;height:14px;cursor:pointer}
+#punishTable td{white-space:normal}
+#punishTable .rw{white-space:nowrap}
+
+/* ── 指标卡 ── */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:13px 16px;box-shadow:var(--shadow)}
+.stat .k{font-size:12px;color:var(--muted);margin-bottom:3px}
+.stat .v{font-size:24px;font-weight:650;letter-spacing:-.5px;line-height:1.2}
+.stat .u{font-size:13px;color:var(--muted);font-weight:400;margin-left:2px}
+.bar{height:4px;background:var(--line);border-radius:2px;margin-top:8px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:2px;transition:width .4s}
+
+/* ── 主体 ── */
+.main{display:grid;grid-template-columns:1fr 380px;gap:12px;margin-bottom:12px}
+.sub{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  box-shadow:var(--shadow);overflow:hidden}
+.card h2{font-size:13px;font-weight:600;padding:11px 16px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:8px;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.4px}
+.card h2 .n{color:var(--text);font-weight:700}
+
+/* 玩家表 */
+.plist{max-height:420px;overflow:auto}
+.prow{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;
+  padding:9px 16px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s}
+.prow:last-child{border-bottom:none}
+.prow:hover{background:var(--accent-soft)}
+.prow.sel{background:var(--accent-soft)}
+.pname{font-weight:600;display:flex;align-items:center;gap:7px}
+.avatar{width:22px;height:22px;border-radius:5px;background:var(--line);flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted)}
+.pmeta{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.hp{width:52px;height:5px;background:var(--line);border-radius:3px;overflow:hidden}
+.hp i{display:block;height:100%;background:var(--danger);border-radius:3px}
+/* 注意：这里必须排除 .slot —— 背包的空格子也叫 .empty，
+   不排除的话 28px 内边距会把格子撑大（格子尺寸算歪、一宽一窄就是它造成的）。 */
+.empty:not(.slot){padding:28px;text-align:center;color:var(--muted);font-size:13px}
+
+/* 表格（世界 / JVM） */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:11px;text-transform:uppercase;
+  letter-spacing:.4px;padding:7px 16px;border-bottom:1px solid var(--line)}
+td{padding:7px 16px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:none}
+td.r,th.r{text-align:right}
+.envtag{font-size:11px;padding:1px 6px;border-radius:4px;background:var(--line);color:var(--muted)}
+
+/* 曲线 */
+.chart-box{padding:12px 14px}
+.chart-box+.chart-box{border-top:1px solid var(--line)}
+.chart-title{font-size:12px;color:var(--muted);margin-bottom:6px;display:flex;
+  justify-content:space-between}
+canvas{display:block;width:100%}
+
+/* 事件 */
+.filters{display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line);
+  flex-wrap:wrap;align-items:center}
+.chip{font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid var(--line);
+  background:transparent;color:var(--muted)}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.filters input{width:150px;padding:5px 9px;font-size:13px}
+.elist{max-height:340px;overflow:auto;font-size:13px}
+/* 世界消息页：时间 / 类型 / 来源 / 内容 四列 */
+.chatlist{max-height:calc(100vh - 270px);min-height:220px;overflow:auto;font-size:13px}
+.chatrow{display:grid;grid-template-columns:58px 56px 104px minmax(0,1fr);gap:10px;
+  padding:7px 16px;border-bottom:1px solid var(--line);align-items:baseline}
+.chatrow:hover{background:var(--bg)}
+.chatrow .ct{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.chatrow .cn{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chatrow .cn.sys{color:var(--muted);font-weight:500}
+.chatrow .cm{white-space:pre-wrap;word-break:break-word}
+.erow{display:grid;grid-template-columns:58px 108px 62px 1fr auto;gap:10px;
+  padding:6px 16px;border-bottom:1px solid var(--line);align-items:baseline}
+.erow:hover{background:var(--accent-soft)}
+.et{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.ep{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.etag{font-size:11px;padding:1px 7px;border-radius:4px;text-align:center;
+  background:var(--line);color:var(--muted);white-space:nowrap}
+.t-BREAK{background:#fee2e2;color:#b91c1c}
+.t-PLACE{background:#dcfce7;color:#15803d}
+.t-CONTAINER,.t-CONTAINER_CLICK{background:#fef3c7;color:#b45309}
+.t-COMMAND{background:#dbeafe;color:#1d4ed8}
+.t-DEATH{background:#fce7f3;color:#be185d}
+.t-JOIN,.t-QUIT{background:#f1f5f9;color:#64748b}
+.t-ADMIN{background:#ede9fe;color:#6d28d9}
+.t-CHAT{background:var(--accent-soft);color:#0f766e}
+.t-WORLD{background:#eef2f7;color:#475569}
+.t-BROADCAST{background:#e0f2fe;color:#0369a1}
+.t-PLUGIN{background:#fef9c3;color:#a16207}
+.t-ALERT{background:#fee2e2;color:#b91c1c;font-weight:600}
+html[data-theme="dark"] .t-BREAK{background:#4c1d1d;color:#fca5a5}
+html[data-theme="dark"] .t-PLACE{background:#14351f;color:#86efac}
+html[data-theme="dark"] .t-CONTAINER,html[data-theme="dark"] .t-CONTAINER_CLICK{background:#422a0d;color:#fcd34d}
+html[data-theme="dark"] .t-COMMAND{background:#172554;color:#93c5fd}
+html[data-theme="dark"] .t-DEATH{background:#4a1d3d;color:#f9a8d4}
+html[data-theme="dark"] .t-JOIN,html[data-theme="dark"] .t-QUIT{background:#1e293b;color:#94a3b8}
+html[data-theme="dark"] .t-ADMIN{background:#2e1065;color:#c4b5fd}
+html[data-theme="dark"] .t-CHAT{background:#134e4a;color:#5eead4}
+html[data-theme="dark"] .t-WORLD{background:#1e293b;color:#cbd5e1}
+html[data-theme="dark"] .t-BROADCAST{background:#0c2d48;color:#7dd3fc}
+html[data-theme="dark"] .t-PLUGIN{background:#3f2d0a;color:#fde68a}
+html[data-theme="dark"] .t-ALERT{background:#4c1d1d;color:#fca5a5}
+.ed{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.epos{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* 抽屉 */
+#drawer{position:fixed;top:0;right:0;width:430px;max-width:94vw;height:100%;
+  background:var(--card);border-left:1px solid var(--line);box-shadow:-6px 0 24px rgba(16,32,48,.1);
+  transform:translateX(100%);transition:transform .22s ease;z-index:50;
+  display:flex;flex-direction:column}
+#drawer.open{transform:none}
+.dhead{padding:16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.dhead .x{margin-left:auto;padding:4px 10px}
+.dbody{padding:16px;overflow:auto;flex:1}
+.dsec{margin-bottom:18px}
+.dsec h3{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;
+  margin-bottom:8px}
+.kv{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;gap:12px}
+.kv .v{font-variant-numeric:tabular-nums;font-weight:500;text-align:right}
+.hpbar{height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin:5px 0 10px}
+.hpbar i{display:block;height:100%;background:linear-gradient(90deg,#ef4444,#f97316);
+  border-radius:4px;transition:width .3s}
+.foodbar i{background:linear-gradient(90deg,#f59e0b,#84cc16)}
+
+/* 状态标签 */
+.flags{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.flag{font-size:11px;padding:1px 7px;border-radius:4px;background:var(--line);color:var(--muted)}
+.flag.fire{background:#fee2e2;color:#b91c1c}
+.flag.fly{background:#dbeafe;color:#1d4ed8}
+
+/* 背包 —— 格子尺寸一律用固定 px（--slot），不用 aspect-ratio：
+   aspect-ratio + grid 拉伸在 Chrome 里会把格子宽度算歪，出来是「一宽一窄、标签错位」，
+   直接给死宽高最稳。 */
+.inv{--slot:36px;display:grid;grid-template-columns:repeat(9,var(--slot));gap:4px;
+  justify-content:start;margin-bottom:10px}
+.inv6{--slot:44px;display:grid;grid-template-columns:repeat(6,var(--slot));gap:8px;
+  justify-content:start;margin-bottom:2px}
+.cell{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+.slabel{font-size:10px;color:var(--muted);text-align:center;line-height:1.3;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.slot{width:var(--slot,36px);height:var(--slot,36px);flex:0 0 auto;padding:0;
+  border-radius:5px;background:rgba(0,0,0,.045);position:relative;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:default}
+html[data-theme="dark"] .slot{background:rgba(255,255,255,.07)}
+.slot.empty{background:rgba(0,0,0,.025)}
+html[data-theme="dark"] .slot.empty{background:rgba(255,255,255,.035)}
+/* 可点击拿走的格子：鼠标移上去给个红框，提示这格能操作 */
+.slot.takeable{cursor:pointer;transition:box-shadow .12s}
+.slot.takeable:hover{box-shadow:inset 0 0 0 2px var(--danger)}
+.slot svg{width:82%;height:82%;display:block}
+.slot img{width:82%;height:82%;max-width:100%;max-height:100%;object-fit:contain;
+  image-rendering:pixelated}
+.slot .lbl{font-size:11px;font-weight:700;line-height:1}
+.slot .n{position:absolute;right:2px;bottom:0;font-size:10px;font-weight:700;color:#fff;
+  text-shadow:0 0 2px #000,0 0 3px #000,0 0 3px #000}
+.invlabel{font-size:11px;color:var(--muted);margin:2px 0 4px}
+
+/* 操作区（抽屉里还在用 actgrid / actrow） */
+.actgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+.actgrid button{padding:7px;font-size:13px}
+.actrow{display:flex;gap:6px;margin-bottom:6px}
+.actrow input,.actrow select{flex:1;min-width:0}
+.actrow button{flex:0 0 auto;white-space:nowrap}
+
+/* 详情页「操作」页签：上排快捷按钮 + 分组表单 */
+.quick{display:flex;flex-wrap:wrap;gap:8px;padding-bottom:14px;margin-bottom:4px;
+  border-bottom:1px solid var(--line)}
+.quick button{padding:7px 20px;font-size:13px}
+.opgroup{display:flex;align-items:center;gap:9px;margin:16px 0 9px;
+  font-size:11px;color:var(--muted);letter-spacing:.4px}
+.opgroup::after{content:"";flex:1;height:1px;background:var(--line)}
+/* 操作表单不跟着卡片无限拉宽，收成一条 720 的窄栏更好读 */
+.opsec{max-width:720px}
+.ofm{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:8px 10px;
+  align-items:center;margin-bottom:7px;min-height:34px}
+.ofm label{font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}
+.ofin{display:flex;gap:6px;align-items:center;min-width:0}
+.ofin > input{min-width:0}
+.ofin input.num{flex:0 0 68px;width:68px;text-align:center}
+.ofin .unit{font-size:12px;color:var(--muted);flex:0 0 auto}
+.ofin select{flex:0 1 auto;min-width:0;max-width:220px}
+/* 按钮一律等宽，右边缘对齐 —— 不然「治疗」窄、「旁观 / 恢复」宽，看着就是歪的 */
+.obtn{display:flex;gap:6px;justify-content:flex-end}
+.obtn button{width:104px;padding:6px 0;font-size:13px;text-align:center;white-space:nowrap}
+.danger-text{color:var(--danger)}
+.hint{font-size:11px;color:var(--muted);margin-top:4px}
+
+/* toast */
+#toasts{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99;
+  display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{background:#16202e;color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;
+  box-shadow:0 4px 16px rgba(0,0,0,.2);animation:tin .2s ease;pointer-events:auto;
+  display:flex;align-items:center;gap:10px}
+.toast button{background:rgba(255,255,255,.16);border:none;color:#fff;border-radius:14px;
+  padding:3px 12px;font-size:12px;cursor:pointer}
+.toast button:hover{background:rgba(255,255,255,.3);color:#fff}
+.toast.err{background:#b91c1c}
+.toast.ok{background:#047857}
+@keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+@media(max-width:1180px){
+  .playout{grid-template-columns:240px minmax(0,1fr)}
+  .playout .pcol:last-child{grid-column:1 / -1}
+}
+@media(max-width:900px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .main,.sub{grid-template-columns:1fr}
+  .playout,.pview{grid-template-columns:1fr}
+  .pcol{max-height:none}
+  /* 窄屏一条栏放不下，Tab 换到按钮下面一行；收藏提示先藏掉 */
+  .pback{grid-template-columns:1fr;gap:10px}
+  .pback .hint-right{display:none}
+  /* 窄屏左栏不再贴顶，避免和右栏叠在一起 */
+  .pview > aside.card{position:static;max-height:none}
+}
+@media(max-width:420px){
+  .inv{--slot:30px}
+  .inv6{--slot:38px}
+}
+</style>
+</head>
+<body>
+
+<!-- 登录 -->
+<div id="login">
+  <h1>TinyWatch</h1>
+  <p>输入密码以查看服务器监控面板</p>
+  <input id="pw" type="password" placeholder="登录密码" autocomplete="current-password">
+  <button onclick="doLogin()">登录</button>
+  <div id="loginErr"></div>
+</div>
+
+<!-- 主面板 -->
+<div id="panel" class="wrap hide">
+  <header>
+    <div>
+      <div class="logo">Tiny<span>Watch</span></div>
+      <div class="title-sub" id="srvName">连接中…</div>
+    </div>
+    <div class="right">
+      <span class="live">
+        <span class="dot" id="connDot"></span>
+        <span class="mono" id="liveTps">—</span><span class="sep">TPS</span>
+        <span class="sep">·</span>
+        <span class="mono" id="liveOnline">0</span><span class="sep">在线</span>
+      </span>
+      <span class="live hide" id="roTag" style="color:var(--warn)">只读模式</span>
+      <span class="live hide" id="updBar" style="color:var(--accent);cursor:pointer"
+        onclick="switchTab('system')" title="有新版本，点这里看详情">有新版本</span>
+      <button onclick="toggleTheme()" id="themeBtn" title="切换主题">深色</button>
+      <button onclick="doLogout()">退出</button>
+    </div>
+  </header>
+
+  <!-- 预警横幅：服务器哪里不正常就挂在这里，恢复正常自动消失 -->
+  <div id="alertBar" class="hide"></div>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab on" data-tab="overview">概览</button>
+    <button class="tab" data-tab="players">玩家</button>
+    <button class="tab" data-tab="chat">聊天</button>
+    <button class="tab" data-tab="logs">日志</button>
+    <button class="tab" data-tab="world">世界</button>
+    <button class="tab" data-tab="plugin">插件</button>
+    <button class="tab" data-tab="bans">黑名单</button>
+    <button class="tab" data-tab="system">系统</button>
+  </nav>
+
+  <section class="pane" id="pane-overview">
+    <div class="stats">
+      <div class="stat">
+        <div class="k">TPS</div>
+        <div class="v" id="vTps">—</div>
+        <div class="bar"><i id="bTps" style="width:100%"></i></div>
+      </div>
+      <div class="stat">
+        <div class="k">在线玩家</div>
+        <div class="v" id="vOnline">—</div>
+      </div>
+      <div class="stat">
+        <div class="k">内存</div>
+        <div class="v" id="vMem">—</div>
+        <div class="bar"><i id="bMem" style="width:0%"></i></div>
+      </div>
+      <div class="stat">
+        <div class="k">实体 / 区块</div>
+        <div class="v" id="vEnt">—</div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="card">
+        <h2>在线玩家 <span class="n" id="pCount">0</span></h2>
+        <div class="plist" id="plist"><div class="empty">暂无玩家在线</div></div>
+      </div>
+
+      <div class="card">
+        <div class="chart-box">
+          <div class="chart-title"><span>TPS</span><span id="tpsNow">—</span></div>
+          <canvas id="cTps" height="90"></canvas>
+        </div>
+        <div class="chart-box">
+          <div class="chart-title"><span>内存 (MB)</span><span id="memNow">—</span></div>
+          <canvas id="cMem" height="90"></canvas>
+        </div>
+        <div class="chart-box">
+          <div class="chart-title"><span>MSPT</span><span id="msptNow">—</span></div>
+          <canvas id="cMspt" height="70"></canvas>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="pane hide" id="pane-players">
+    <div class="card">
+      <h2>在线玩家 <span class="n" id="pCount2">0</span></h2>
+      <div class="filters">
+        <input id="pfSearch" placeholder="搜索玩家名或世界" oninput="renderPlayerTable()">
+        <span class="sp"></span>
+        <span class="small muted">点任意一行查看背包与操作</span>
+      </div>
+      <div id="batchBar" class="filters hide">
+        <span class="small">已选 <b id="batchCount">0</b> 人</span>
+        <button class="chip" onclick="batchAct('message')">发消息</button>
+        <button class="chip" onclick="batchAct('kick')">踢出</button>
+        <button class="chip" onclick="batchAct('clearinv')">清空背包</button>
+        <button class="chip" onclick="batchAct('ban')">封禁</button>
+        <button class="chip" onclick="clearBatch()">取消选择</button>
+      </div>
+      <div class="ptable-wrap">
+        <table class="ptable">
+          <thead>
+            <tr>
+              <th class="chk"><input type="checkbox" id="pchkAll"
+                  onclick="event.stopPropagation(); toggleAllPlayers(this.checked)"></th>
+              <th>玩家</th><th>世界</th><th class="r">坐标</th><th class="r">区块</th>
+              <th class="r">血量</th><th class="r">饥饿</th><th class="r">等级</th>
+              <th>模式</th><th class="r">延迟</th><th class="r">在线</th><th class="r">首次进服</th>
+            </tr>
+          </thead>
+          <tbody id="ptableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="pane hide" id="pane-chat">
+    <div class="card">
+      <h2>世界消息 <span class="n small muted" id="chatCount"></span></h2>
+      <div class="filters" id="chatFilters">
+        <button class="chip on" data-group="all">全部</button>
+        <button class="chip" data-group="player">玩家</button>
+        <button class="chip" data-group="sys">系统</button>
+        <button class="chip" data-group="plugin">插件</button>
+        <button class="chip" data-group="cmd">指令</button>
+        <input id="chatSearch" placeholder="搜索玩家或内容" oninput="renderChat()">
+        <button class="chip" onclick="exportCsv('chat')">导出 CSV</button>
+        <span class="small muted">实时，保留最近 200 条</span>
+      </div>
+      <div class="chatlist" id="chatList"><div class="empty">还没有消息</div></div>
+    </div>
+  </section>
+
+  <section class="pane hide" id="pane-logs">
+    <div class="card">
+      <h2>操作日志 <span class="n small muted" id="evCount"></span></h2>
+      <div class="filters">
+        <button class="chip on" data-type="">全部</button>
+        <button class="chip" data-type="BREAK">破坏</button>
+        <button class="chip" data-type="PLACE">放置</button>
+        <button class="chip" data-type="CONTAINER">容器</button>
+        <button class="chip" data-type="COMMAND">命令</button>
+        <button class="chip" data-type="DEATH">死亡</button>
+        <button class="chip" data-type="ADMIN">管理</button>
+        <input id="fPlayer" placeholder="按玩家筛选" oninput="onFilter()">
+        <input id="fKeyword" placeholder="搜索内容" oninput="onFilter()">
+        <button class="chip" onclick="clearFilter()">清除</button>
+        <button class="chip" onclick="exportCsv('log')">导出 CSV</button>
+        <span class="small muted">只显示游戏内动作，聊天内容在「聊天」页签</span>
+      </div>
+      <div class="elist" id="elist"><div class="empty">暂无操作记录</div></div>
+    </div>
+  </section>
+
+  <section class="pane hide" id="pane-player">
+    <div class="pback">
+      <button onclick="backToPlayers()">← 返回玩家列表</button>
+      <div class="pback-right">
+        <div class="ptabs" id="qTabs">
+          <button class="ptab on" data-ptab="overview" onclick="setPlayerTab('overview')">概览</button>
+          <button class="ptab" data-ptab="inv" onclick="setPlayerTab('inv')">背包</button>
+          <button class="ptab" data-ptab="act" onclick="setPlayerTab('act')">操作</button>
+          <button class="ptab" data-ptab="log" onclick="setPlayerTab('log')">日志</button>
+        </div>
+        <span class="small muted hint-right">地址栏可以收藏这个玩家</span>
+      </div>
+    </div>
+    <div class="pview">
+      <aside class="card">
+        <h2>在线玩家 <span class="n" id="qCount">0</span></h2>
+        <div class="psearch">
+          <input id="qSearch" placeholder="搜索玩家或世界" oninput="paintSideList()">
+        </div>
+        <div class="plist" id="qList"></div>
+      </aside>
+      <div class="card pmain" id="qMain">
+        <div class="empty">从左边选一个玩家</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="pane hide" id="pane-world">
+    <div class="pview">
+      <aside class="card">
+        <h2>世界 <span class="n" id="wCount">0</span></h2>
+        <div class="plist" id="wList"></div>
+      </aside>
+      <div class="card pmain" id="wMain">
+        <div class="empty">左边选一个世界</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="pane hide" id="pane-plugin">
+    <div class="card">
+      <h2>已装插件 <span class="n small muted" id="plugCount"></span></h2>
+      <div class="filters">
+        <input id="plugSearch" placeholder="搜索插件名" oninput="renderPlugins()">
+        <span class="small muted" id="plugTotals">—</span>
+        <span class="small muted">点一行看详情</span>
+      </div>
+      <div class="ptable-wrap">
+        <table class="ptable">
+          <colgroup>
+            <col><col style="width:130px">
+            <col style="width:84px"><col style="width:76px"><col style="width:76px">
+            <col style="width:100px"><col style="width:76px">
+          </colgroup>
+          <thead><tr>
+            <th>插件</th><th>版本</th>
+            <th class="r">监听器</th><th class="r">命令</th><th class="r">任务</th>
+            <th class="r">jar</th><th>状态</th>
+          </tr></thead>
+          <tbody id="plugBody"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="pane hide" id="pane-bans">
+    <div class="card">
+      <h2>黑名单 <span class="n small muted" id="banCount"></span></h2>
+      <div class="filters">
+        <input id="banSearch" placeholder="搜索玩家名" oninput="renderBans()">
+        <span class="small muted">服务器原版封禁 + 网页封禁，合并显示</span>
+      </div>
+      <div class="ptable-wrap">
+        <table class="ptable">
+          <colgroup>
+            <col style="width:150px"><col style="width:96px"><col>
+            <col style="width:96px"><col style="width:150px"><col style="width:120px">
+            <col style="width:76px">
+          </colgroup>
+          <thead><tr>
+            <th>玩家</th><th>来源</th><th>原因</th><th>操作人</th>
+            <th class="r">封禁时间</th><th class="r">到期</th><th></th>
+          </tr></thead>
+          <tbody id="banBody"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="pane hide" id="pane-system">
+    <div class="sub">
+      <div class="card">
+        <h2>世界分布</h2>
+        <table id="worldTable">
+          <thead>
+            <tr><th>世界</th><th>类型</th><th class="r">玩家</th><th class="r">区块</th><th class="r">实体</th></tr>
+          </thead>
+          <tbody><tr><td colspan="5" class="empty">暂无数据</td></tr></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>JVM 健康</h2>
+        <table id="jvmTable">
+          <tbody><tr><td colspan="2" class="empty">暂无数据</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h2>服务器</h2>
+      <table id="serverInfo"><tbody></tbody></table>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h2>版本 <span class="n small muted" id="updTag"></span></h2>
+      <table id="updTable"><tbody><tr><td colspan="2" class="empty">加载中…</td></tr></tbody></table>
+      <div class="filters" style="border-bottom:none;padding:10px 0 0">
+        <button class="chip" onclick="checkUpdate()">立即检查</button>
+        <button class="chip hide" id="updDl" onclick="openUpdateUrl()">打开下载页</button>
+        <span class="small muted" id="updHint"></span>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h2>只读分享</h2>
+      <div class="filters">
+        <input id="shareMin" class="num" value="60" style="width:80px">
+        <span class="small muted">分钟有效</span>
+        <button class="chip" onclick="makeShare()">生成只读链接</button>
+        <input id="shareOut" placeholder="生成后显示在这里，可直接复制" readonly style="width:340px">
+        <span class="small muted">别人打开只能看，不能操作</span>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h2>处罚记录 <span class="n small muted" id="punishCount"></span></h2>
+      <table id="punishTable">
+        <thead><tr><th>玩家</th><th>类型</th><th>原因</th><th>状态</th><th class="r">时间</th><th></th></tr></thead>
+        <tbody><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h2>计划任务</h2>
+      <table id="taskTable">
+        <thead><tr><th>任务</th><th>频率</th><th class="r">下次执行</th></tr></thead>
+        <tbody><tr><td colspan="3" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- 玩家详情 -->
+<div id="drawer">
+  <div class="dhead">
+    <div>
+      <div class="pname" id="dName">—</div>
+      <div class="small muted" id="dUuid"></div>
+    </div>
+    <button class="x" onclick="closeDrawer()">关闭</button>
+  </div>
+  <div class="dbody" id="dBody"></div>
+</div>
+
+<div id="toasts"></div>
+
+<!-- 「给物品」的自动补全，第一次打开操作页时才填充 -->
+<datalist id="opItems"></datalist>
+
+<script>
+"use strict";
+
+var state = {
+  snapshot: null,
+  events: [],
+  lastId: 0,
+  selected: null,
+  detail: null,
+  detailOwner: null,
+  tab: "overview",
+  ptab: "overview",
+  opGroup: "all",
+  chat: [],
+  chatGroup: "all",
+  batch: {},
+  readOnly: false,
+  worlds: [],
+  worldRules: [],
+  worldSel: null,
+  plugins: [],
+  plugTotals: {},
+  update: null,
+  checkingUpdate: false,
+  plugOpen: {},
+  bans: [],
+  plog: { type: "", keyword: "" },
+  filter: { type: "", player: "", keyword: "" },
+  hist: { tps: [], mem: [], mspt: [] }
+};
+
+var MAX_POINTS = 300;
+var MAX_EVENTS = 300;
+
+function $(s) { return document.querySelector(s); }
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+function pad(n) { return n < 10 ? "0" + n : "" + n; }
+function hhmmss(ms) {
+  var d = new Date(ms);
+  return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+}
+function ymd(ms) {
+  var d = new Date(ms);
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+}
+function dur(sec) {
+  if (sec < 60) return sec + " 秒";
+  if (sec < 3600) return Math.floor(sec / 60) + " 分";
+  var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  if (h < 24) return h + " 时 " + m + " 分";
+  return Math.floor(h / 24) + " 天 " + (h % 24) + " 时";
+}
+function actionLabel(t) {
+  return ({ BREAK: "破坏", PLACE: "放置", CONTAINER: "打开", CONTAINER_CLICK: "取放",
+    COMMAND: "命令", CHAT: "聊天", DEATH: "死亡", JOIN: "进服", QUIT: "退服", ADMIN: "管理",
+    WORLD: "系统", BROADCAST: "广播", PLUGIN: "插件", ALERT: "警报" })[t] || t;
+}
+function gmLabel(g) {
+  return ({ SURVIVAL: "生存", CREATIVE: "创造", ADVENTURE: "冒险", SPECTATOR: "旁观" })[g] || g;
+}
+function envLabel(e) {
+  return ({ NORMAL: "主世界", NETHER: "下界", THE_END: "末地" })[e] || e;
+}
+
+/* ───────────── 版本更新 ───────────── */
+function loadUpdate() {
+  api("/api/update").then(function (d) {
+    if (!d || !d.ok) return;
+    state.update = d;
+    renderUpdate(d);
+  }).catch(function () {});
+}
+
+function renderUpdate(d) {
+  var tb = document.querySelector("#updTable tbody");
+  if (!tb) return;
+
+  var tag = document.getElementById("updTag");
+  var bar = document.getElementById("updBar");
+  var dl = document.getElementById("updDl");
+  var hint = document.getElementById("updHint");
+  var hasNew = d.checked && d.hasUpdate;
+
+  if (tag) tag.textContent = hasNew ? "有新版本 " + d.latest : "";
+  if (bar) bar.classList.toggle("hide", !hasNew);
+  if (dl) dl.classList.toggle("hide", !(hasNew && d.url));
+
+  var stateText;
+  if (!d.enabled) {
+    stateText = '<span class="dim">更新检查已在配置里关闭</span>';
+  } else if (!d.checked) {
+    stateText = '<span class="dim">还没查过（启动后会自动查一次）</span>';
+  } else if (hasNew) {
+    stateText = '<span style="color:var(--warn)">有新版本 ' + esc(d.latest) + "</span>" +
+      (d.force ? ' <span class="dim">（强制更新）</span>' : "");
+  } else {
+    stateText = '<span style="color:var(--ok)">已是最新</span>';
+  }
+
+  var rows = "";
+  rows += '<tr><td>当前版本</td><td class="r">' + esc(d.current || "?") + "</td></tr>";
+  rows += "<tr><td>最新版本</td><td class=\"r\">" +
+    (d.checked ? esc(d.latest || d.current || "?") : '<span class="dim">—</span>') + "</td></tr>";
+  rows += '<tr><td>状态</td><td class="r">' + stateText + "</td></tr>";
+  if (d.published) {
+    rows += '<tr><td>发布日期</td><td class="r dim">' + esc(d.published) + "</td></tr>";
+  }
+  rows += '<tr><td>上次检查</td><td class="r dim">' +
+    (d.lastCheck > 0 ? ymd(d.lastCheck) + " " + hhmmss(d.lastCheck) : "还没查过") + "</td></tr>";
+  if (d.lastError) {
+    rows += '<tr><td>检查失败</td><td class="r" style="color:var(--danger)">' +
+      esc(d.lastError) + "</td></tr>";
+  }
+  if (hasNew && d.notes) {
+    rows += '<tr><td>更新说明</td><td style="white-space:pre-wrap;line-height:1.6">' +
+      esc(d.notes) + "</td></tr>";
+  }
+  tb.innerHTML = rows;
+
+  if (hint) {
+    hint.textContent = hasNew ? "下载后手动替换 plugins/ 里的 jar，再重启服务器" : "";
+  }
+}
+
+function checkUpdate() {
+  if (state.checkingUpdate) return;
+  state.checkingUpdate = true;
+  var hint = document.getElementById("updHint");
+  if (hint) hint.textContent = "正在检查…";
+  api("/api/update-check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}"
+  }).then(function (d) {
+    state.checkingUpdate = false;
+    if (d && d.ok) {
+      state.update = d;
+      renderUpdate(d);
+      toast(d.checked && d.hasUpdate ? ("有新版本 " + d.latest) : "检查完成", "ok");
+    } else {
+      toast((d && d.error) || "检查失败", "err");
+      if (hint) hint.textContent = "";
+    }
+  }).catch(function () {
+    state.checkingUpdate = false;
+    toast("检查请求失败", "err");
+  });
+}
+
+function openUpdateUrl() {
+  var u = state.update && state.update.url;
+  if (u) window.open(u, "_blank", "noopener");
+}
+
+/* ───────────── 插件页 ───────────── */
+function fmtBytes(n) {
+  if (!n || n < 0) return "—";
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1024 / 1024).toFixed(2) + " MB";
+}
+
+function loadPlugins() {
+  api("/api/plugins").then(function (d) {
+    if (!d || !d.ok) { toast((d && d.error) || "读取插件失败", "err"); return; }
+    state.plugins = d.plugins || [];
+    state.plugTotals = d.totals || {};
+    renderPlugins();
+  }).catch(function () {});
+}
+
+function renderPlugins() {
+  var body = document.getElementById("plugBody");
+  if (!body) return;
+  var list = state.plugins || [];
+  var q = (document.getElementById("plugSearch").value || "").trim().toLowerCase();
+  if (q) {
+    list = list.filter(function (p) { return p.name.toLowerCase().indexOf(q) >= 0; });
+  }
+
+  var t = state.plugTotals || {};
+  var cnt = document.getElementById("plugCount");
+  if (cnt) cnt.textContent = (state.plugins || []).length;
+  var tot = document.getElementById("plugTotals");
+  if (tot) {
+    tot.textContent = (t.enabled || 0) + " 个启用 / 共 " + (t.count || 0) +
+      " 个 · jar 合计 " + fmtBytes(t.jarBytes) + " · 监听器 " + (t.listeners || 0) + " 个";
+  }
+
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">没有匹配的插件</td></tr>';
+    return;
+  }
+
+  var html = [];
+  list.forEach(function (p) {
+    html.push('<tr class="clickable" onclick="togglePlug(\'' + esc(p.name) + '\')">' +
+      '<td class="pnm">' + esc(p.name) + "</td>" +
+      "<td class=\"dim\">" + esc(p.version) + "</td>" +
+      '<td class="r">' + p.listeners + "</td>" +
+      '<td class="r">' + p.commands + "</td>" +
+      '<td class="r">' + (p.tasks > 0 ? p.tasks : '<span class="dim">0</span>') + "</td>" +
+      '<td class="r dim">' + fmtBytes(p.jar) + "</td>" +
+      '<td>' + (p.enabled ? '<span style="color:var(--ok)">启用</span>'
+        : '<span style="color:var(--danger)">停用</span>') + "</td></tr>");
+    if (state.plugOpen && state.plugOpen[p.name]) {
+      var dep = (p.depend || []).join(", ") || "无";
+      var soft = (p.softDepend || []).join(", ") || "无";
+      var auth = (p.authors || []).join(", ") || "未标注";
+      html.push('<tr class="detail-row"><td colspan="7">' +
+        (p.desc ? "<b>描述：</b>" + esc(p.desc) + "<br>" : "") +
+        "<b>作者：</b>" + esc(auth) +
+        " &nbsp;·&nbsp; <b>加载阶段：</b>" + esc(p.load) +
+        (p.api ? " &nbsp;·&nbsp; <b>api-version：</b>" + esc(p.api) : "") +
+        "<br><b>硬依赖：</b>" + esc(dep) +
+        " &nbsp;·&nbsp; <b>软依赖：</b>" + esc(soft) +
+        "<br><b>jar：</b>" + esc(p.path) + "（" + fmtBytes(p.jar) + "）" +
+        "</td></tr>");
+    }
+  });
+  body.innerHTML = html.join("");
+}
+
+function togglePlug(name) {
+  state.plugOpen = state.plugOpen || {};
+  state.plugOpen[name] = !state.plugOpen[name];
+  renderPlugins();
+}
+
+/* ───────────── 黑名单页 ───────────── */
+function loadBans() {
+  api("/api/bans").then(function (d) {
+    if (!d || !d.ok) { toast((d && d.error) || "读取黑名单失败", "err"); return; }
+    state.bans = d.bans || [];
+    renderBans();
+  }).catch(function () {});
+}
+
+function renderBans() {
+  var body = document.getElementById("banBody");
+  if (!body) return;
+  var list = state.bans || [];
+  var q = (document.getElementById("banSearch").value || "").trim().toLowerCase();
+  if (q) {
+    list = list.filter(function (b) { return b.name.toLowerCase().indexOf(q) >= 0; });
+  }
+  var cnt = document.getElementById("banCount");
+  if (cnt) cnt.textContent = (state.bans || []).length;
+
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">' +
+      (q ? "没有匹配的玩家" : "黑名单是空的") + "</td></tr>";
+    return;
+  }
+
+  body.innerHTML = list.map(function (b) {
+    var src = b.source === "both" ? "两边都有" : (b.source === "web" ? "网页封禁" : "服务器封禁");
+    var created = b.created > 0 ? ymd(b.created) + " " + hhmmss(b.created).slice(0, 5) : "—";
+    var expires = b.expires > 0 ? ymd(b.expires) : "永久";
+    return "<tr>" +
+      '<td class="pnm">' + esc(b.name) + "</td>" +
+      '<td class="dim">' + esc(src) + "</td>" +
+      "<td>" + (b.reason ? esc(b.reason) : '<span class="dim">未填</span>') + "</td>" +
+      '<td class="dim">' + esc(b.by || "—") + "</td>" +
+      '<td class="r dim">' + created + "</td>" +
+      '<td class="r dim">' + expires + "</td>" +
+      '<td><button class="chip" data-name="' + esc(b.name) +
+      '" onclick="revokeBan(this)">解除</button></td></tr>';
+  }).join("");
+}
+
+function revokeBan(btn) {
+  var name = btn.getAttribute("data-name");
+  if (state.readOnly) { toast("只读分享链接不能操作", "err"); return; }
+  if (!confirm("解除 " + name + " 的封禁？\n\n解除后他就能重新进服了。")) return;
+  api("/api/ban-revoke", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name })
+  }).then(function (d) {
+    if (d && d.ok) { toast(d.msg || "已解除", "ok"); loadBans(); }
+    else toast((d && d.error) || "解除失败", "err");
+  }).catch(function () { toast("请求失败", "err"); });
+}
+
+/* ───────────── 世界修改 ───────────── */
+var worldTimer = null;
+
+function loadWorlds(silent) {
+  api("/api/worlds").then(function (d) {
+    if (!d || !d.ok) return;
+    state.worlds = d.worlds || [];
+    state.worldRules = d.rules || [];
+    if (!state.worldSel && state.worlds.length) {
+      state.worldSel = state.worlds[0].name;
+    }
+    renderWorldList();
+    renderWorldDetail(silent === true);
+  }).catch(function () {});
+}
+
+function currentWorld() {
+  var list = state.worlds || [];
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].name === state.worldSel) return list[i];
+  }
+  return null;
+}
+
+function renderWorldList() {
+  var box = document.getElementById("wList");
+  if (!box) return;
+  var list = state.worlds || [];
+  var cnt = document.getElementById("wCount");
+  if (cnt) cnt.textContent = list.length;
+  box.innerHTML = list.map(function (w) {
+    var on = w.name === state.worldSel ? " on" : "";
+    var weather = w.thundering ? "雷雨" : (w.storm ? "下雨" : "晴");
+    return '<div class="witem' + on + '" onclick="selectWorld(\'' + esc(w.name) + '\')">' +
+      '<div class="wn"><span class="name">' + esc(w.name) + '</span>' +
+      '<span class="wenv">' + esc(w.envLabel) + "</span></div>" +
+      '<div class="wd">' + w.clock + " · " + weather + " · " + w.players + " 人</div>" +
+      "</div>";
+  }).join("");
+}
+
+function selectWorld(name) {
+  state.worldSel = name;
+  renderWorldList();
+  loadWorlds();
+}
+
+function renderWorldDetail(silent) {
+  var w = currentWorld();
+  var main = document.getElementById("wMain");
+  if (!main) return;
+  if (!w) {
+    main.innerHTML = '<div class="empty">左边选一个世界</div>';
+    return;
+  }
+  // 静默刷新：只更新几个会自己变的数字，不动表单（否则正在输入的内容会被清掉）
+  if (silent) {
+    setText("wClock", w.clock);
+    setText("wWeather", w.thundering ? "雷雨" : (w.storm ? "下雨" : "晴"));
+    setText("wEnt", w.entities);
+    setText("wChunks", w.chunks);
+    setText("wPlayers", w.players);
+    return;
+  }
+
+  var rules = state.worldRules || [];
+  var h = '<div class="phead"><div class="av">' + esc(w.envLabel.charAt(0)) + "</div>" +
+    '<div style="flex:1"><div class="nm">' + esc(w.name) + "</div>" +
+    '<div class="uuid">' + esc(w.envLabel) + " · " + esc(w.env) + "</div></div></div>";
+
+  h += '<div class="pgrid wgrid"><section class="pbox full" data-g="w"><h4>当前状态</h4>' +
+    '<div class="kv"><span>游戏时间</span><span class="v" id="wClock">' + w.clock + "</span></div>" +
+    '<div class="kv"><span>天气</span><span class="v" id="wWeather">' +
+      (w.thundering ? "雷雨" : (w.storm ? "下雨" : "晴")) + "</span></div>" +
+    '<div class="kv"><span>难度</span><span class="v">' + diffCn(w.difficulty) + "</span></div>" +
+    '<div class="kv"><span>在线玩家</span><span class="v" id="wPlayers">' + w.players + "</span></div>" +
+    '<div class="kv"><span>区块 / 实体</span><span class="v"><span id="wChunks">' + w.chunks +
+      '</span> / <span id="wEnt">' + w.entities + "</span></span></div>" +
+    '<div class="kv"><span>出生点</span><span class="v">' + w.spawn.x + ", " + w.spawn.y + ", " + w.spawn.z + "</span></div>" +
+    '<div class="kv"><span>边界</span><span class="v">中心 ' + w.border.centerX + "," + w.border.centerZ +
+      " · 直径 " + Math.round(w.border.size) + "</span></div>" +
+    "</section>";
+
+  // 时间
+  h += '<section class="pbox full" data-g="w"><h4>时间</h4>';
+  h += opRow("快捷", '<button onclick="worldAct(\'time\',\'day\')">白天</button>' +
+    '<button onclick="worldAct(\'time\',\'noon\')">正午</button>' +
+    '<button onclick="worldAct(\'time\',\'night\')">夜晚</button>' +
+    '<button onclick="worldAct(\'time\',\'midnight\')">午夜</button>', "");
+  h += opRow("指定 tick", '<input id="wTimeTick" class="num" placeholder="0~24000">',
+    '<button onclick="worldTimeTick()">设置</button>');
+  h += "</section>";
+
+  // 天气
+  h += '<section class="pbox full" data-g="w"><h4>天气</h4>';
+  h += opRow("持续", '<input id="wWeatherMin" class="num" value="10"><span class="unit">分钟</span>', "");
+  h += opRow("切换", '<button onclick="worldWeather(\'clear\')">放晴</button>' +
+    '<button onclick="worldWeather(\'rain\')">下雨</button>' +
+    '<button class="danger" onclick="worldWeather(\'thunder\')">雷雨</button>', "");
+  h += "</section>";
+
+  // 难度
+  h += '<section class="pbox full" data-g="w"><h4>难度</h4>';
+  h += opRow("当前", '<select id="wDiff">' +
+    ["PEACEFUL", "EASY", "NORMAL", "HARD"].map(function (d) {
+      return '<option value="' + d + '"' + (d === w.difficulty ? " selected" : "") + ">" +
+        diffCn(d) + "</option>";
+    }).join("") + "</select>",
+    '<button onclick="worldAct(\'difficulty\', document.getElementById(\'wDiff\').value)">应用</button>');
+  h += "</section>";
+
+  // 规则
+  h += '<section class="pbox full" data-g="w"><h4>游戏规则</h4>';
+  rules.forEach(function (r) {
+    var v = (w.ruleValues || {})[r.key];
+    // 读不到值的规则说明这个服务端没有它，直接不显示，免得给个空开关
+    if (v === "" || v == null) return;
+    if (r.type === "int") {
+      h += opRow(r.label, '<input id="wRule_' + r.key + '" class="num" value="' + esc(v) + '">',
+        '<button onclick="worldRuleInt(\'' + r.key + '\')">应用</button>');
+    } else {
+      var on = String(v) === "true";
+      h += opRow(r.label, '<span class="small muted">当前：' + (on ? "开" : "关") + "</span>",
+        '<button class="' + (on ? "" : "danger") + '" onclick="worldAct(\'rule\',\'' +
+        r.key + '\', \'' + (on ? "false" : "true") + '\')">' + (on ? "关闭" : "开启") + "</button>");
+    }
+  });
+  h += "</section>";
+
+  // 出生点 / 边界
+  h += '<section class="pbox full" data-g="w"><h4>出生点与边界</h4>';
+  h += opRow("出生点", '<input id="wSpawn" placeholder="x y z，或一个在线玩家名">',
+    '<button onclick="worldAct(\'spawn\', document.getElementById(\'wSpawn\').value)">设置</button>');
+  h += opRow("边界直径", '<input id="wBorderSize" class="num" value="' + Math.round(w.border.size) + '">',
+    '<button class="danger" onclick="worldBorderSize()">修改</button>');
+  h += opRow("边界中心", '<input id="wBorderCenter" placeholder="x z，例如 0 0">',
+    '<button onclick="worldBorderCenter()">移动</button>');
+  h += "</section>";
+
+  // 维护
+  h += '<section class="pbox full" data-g="w"><h4>维护</h4>';
+  h += opRow("保存", '<span class="small muted">立刻把这世界写盘</span>',
+    '<button onclick="worldAct(\'save\')">保存</button>');
+  h += opRow("清理掉落物", '<span class="small muted">只删地上的物品实体</span>',
+    '<button class="danger" onclick="worldClear(\'clear-items\')">清理</button>');
+  h += opRow("清理生物", '<span class="small muted danger-text">不碰玩家，删了不能撤销</span>',
+    '<button class="danger" onclick="worldClear(\'mobs\')">清生物</button>' +
+    '<button class="danger" onclick="worldClear(\'all\')">全清</button>');
+  h += "</section>";
+
+  h += "</div>";
+  main.innerHTML = h;
+
+  if (worldTimer) clearInterval(worldTimer);
+  worldTimer = setInterval(function () {
+    if (state.tab === "world") loadWorlds(true);
+  }, 3000);
+}
+
+function setText(id, v) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = v;
+}
+
+function diffCn(d) {
+  return ({ PEACEFUL: "和平", EASY: "简单", NORMAL: "普通", HARD: "困难" })[d] || d;
+}
+
+/** 发一个世界操作。 */
+function worldAct(action, arg1, arg2) {
+  if (state.readOnly) { toast("只读分享链接不能操作", "err"); return; }
+  if (!state.worldSel) return;
+  api("/api/world-action", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      world: state.worldSel, action: action,
+      arg1: arg1 == null ? "" : String(arg1),
+      arg2: arg2 == null ? "" : String(arg2)
+    })
+  }).then(function (d) {
+    if (d && d.ok) {
+      toast(d.msg || "完成", "ok", d.undo);
+      loadWorlds();
+    } else {
+      toast((d && d.error) || "操作失败", "err");
+    }
+  }).catch(function () { toast("请求失败", "err"); });
+}
+
+function worldTimeTick() {
+  var el = document.getElementById("wTimeTick");
+  var v = el ? el.value.trim() : "";
+  if (!v) { toast("请填 tick（0~24000）", "err"); return; }
+  worldAct("time", v);
+}
+
+function worldWeather(kind) {
+  var el = document.getElementById("wWeatherMin");
+  var m = parseInt(el ? el.value : "10", 10);
+  if (isNaN(m) || m < 1) m = 10;
+  worldAct("weather", kind, String(m));
+}
+
+function worldRuleInt(key) {
+  var el = document.getElementById("wRule_" + key);
+  if (!el) return;
+  worldAct("rule", key, el.value.trim());
+}
+
+function worldBorderSize() {
+  var el = document.getElementById("wBorderSize");
+  var v = el ? el.value.trim() : "";
+  if (!v) return;
+  if (!confirm("把边界直径改成 " + v + "？\n\n改小会把边界外的玩家往内推。")) return;
+  worldAct("border", "size", v);
+}
+
+function worldBorderCenter() {
+  var el = document.getElementById("wBorderCenter");
+  var v = el ? el.value.trim() : "";
+  if (!v) { toast("请填中心点 x z", "err"); return; }
+  worldAct("border", "center", v);
+}
+
+function worldClear(kind) {
+  var tip = kind === "clear-items" ? "清理这个世界的所有掉落物？"
+    : (kind === "mobs" ? "清理这个世界的所有生物（不含玩家）？" : "清理这个世界的所有生物和掉落物？");
+  if (!confirm(tip + "\n\n删除后无法撤销。")) return;
+  if (kind === "clear-items") worldAct("clear-items", "");
+  else worldAct("clear-entities", kind);
+}
+
+/* ───────────── 批量选择 ───────────── */
+function toggleAllPlayers(on) {
+  var ids = (state.snapshot && state.snapshot.players) || [];
+  state.batch = {};
+  if (on) {
+    ids.forEach(function (p) { state.batch[p.uuid] = true; });
+  }
+  renderPlayerTable();
+  paintBatchBar();
+}
+
+function togglePlayerSel(uuid, on) {
+  if (on) state.batch[uuid] = true;
+  else delete state.batch[uuid];
+  paintBatchBar();
+}
+
+function clearBatch() {
+  state.batch = {};
+  var all = document.getElementById("pchkAll");
+  if (all) all.checked = false;
+  renderPlayerTable();
+  paintBatchBar();
+}
+
+function paintBatchBar() {
+  var bar = document.getElementById("batchBar");
+  var cnt = document.getElementById("batchCount");
+  var n = Object.keys(state.batch).length;
+  if (cnt) cnt.textContent = n;
+  if (bar) bar.classList.toggle("hide", n === 0);
+}
+
+/** 对勾选的所有人依次执行同一个操作。 */
+function batchAct(name, arg1) {
+  var ids = Object.keys(state.batch);
+  if (!ids.length) return;
+  if (state.readOnly) { toast("只读分享链接不能操作", "err"); return; }
+
+  var extra = arg1 || "";
+  if (name === "message") {
+    var t = prompt("要发给这 " + ids.length + " 个人的内容：");
+    if (!t) return;
+    extra = t;
+  } else if (name === "kick") {
+    if (!confirm("踢出这 " + ids.length + " 人？")) return;
+    extra = prompt("踢出原因（可空）：") || "";
+  } else if (name === "clearinv") {
+    if (!confirm("清空这 " + ids.length + " 人的背包？\n\n不可撤销。")) return;
+  } else if (name === "ban") {
+    if (!confirm("封禁这 " + ids.length + " 人？\n\n需要在后台 /pardon 才能解。")) return;
+    extra = prompt("封禁原因（可空）：") || "";
+  }
+
+  var i = 0, ok = 0, fail = 0;
+  (function next() {
+    if (i >= ids.length) {
+      toast("批量完成：成功 " + ok + "，失败 " + fail, fail ? "err" : "ok");
+      setTimeout(pollSnapshot, 400);
+      return;
+    }
+    var uuid = ids[i++];
+    postAction({ action: name, uuid: uuid, arg1: extra, arg2: "" }).then(function (d) {
+      if (d && d.ok) ok++; else fail++;
+      next();
+    }).catch(function () { fail++; next(); });
+  })();
+}
+
+/* ───────────── 只读分享 ───────────── */
+function makeShare() {
+  var m = parseInt((document.getElementById("shareMin") || {}).value, 10);
+  if (isNaN(m) || m < 1) m = 60;
+  api("/api/share", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ minutes: m })
+  }).then(function (d) {
+    var out = document.getElementById("shareOut");
+    if (d && d.ok && out) {
+      out.value = d.url;
+      out.focus();
+      out.select();
+      toast("链接已生成，" + m + " 分钟内有效", "ok");
+    } else {
+      toast((d && d.error) || "生成失败", "err");
+    }
+  }).catch(function () { toast("请求失败", "err"); });
+}
+
+/* ───────────── 处罚记录 ───────────── */
+function loadPunishments() {
+  api("/api/punishments").then(function (d) {
+    var tbody = document.querySelector("#punishTable tbody");
+    if (!tbody) return;
+    var list = (d && d.records) || [];
+    var cnt = document.getElementById("punishCount");
+    if (cnt) cnt.textContent = list.length ? "(" + list.length + ")" : "";
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">还没有处罚记录</td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.map(function (r) {
+      var kind = r.type === "BAN" ? "封禁" : "禁言";
+      var when = hhmm(r.start) + (r.end > 0 ? " ~ " + hhmm(r.end) : " ~ 永久");
+      var btn = r.active
+        ? '<button class="chip" data-id="' + esc(r.id) + '" data-name="' + esc(r.name) +
+          '" onclick="revokePunish(this)">解除</button>'
+        : "";
+      return '<tr><td>' + esc(r.name) + '</td><td class="rw">' + kind +
+        '</td><td>' + esc(r.reason) + '</td><td class="rw dim">' + esc(r.state) +
+        '</td><td class="r dim rw">' + when + "</td><td>" + btn + "</td></tr>";
+    }).join("");
+  }).catch(function () {});
+}
+
+function revokePunish(btn) {
+  var id = btn.getAttribute("data-id");
+  var name = btn.getAttribute("data-name");
+  if (!confirm("解除 " + name + " 的这条处罚？")) return;
+  api("/api/punish-revoke", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: id })
+  }).then(function (d) {
+    if (d && d.ok) { toast(d.msg || "已解除", "ok"); loadPunishments(); }
+    else toast((d && d.error) || "解除失败", "err");
+  }).catch(function () { toast("请求失败", "err"); });
+}
+
+/* ───────────── 预警横幅 ───────────── */
+var lastAlertKey = "";
+function renderAlerts(alerts) {
+  var bar = document.getElementById("alertBar");
+  if (!bar) return;
+  var list = alerts || [];
+  var key = list.map(function (a) { return a.level + a.text; }).join("|");
+  if (key === lastAlertKey) return;   // 没变化就别动 DOM
+  lastAlertKey = key;
+  if (!list.length) {
+    bar.classList.add("hide");
+    bar.innerHTML = "";
+    return;
+  }
+  bar.classList.remove("hide");
+  bar.innerHTML = list.map(function (a) {
+    return '<div class="alert ' + (a.level === "bad" ? "bad" : "warn") + '">' +
+      '<i></i><span>' + esc(a.text) + "</span></div>";
+  }).join("");
+}
+
+/* ───────────── 玩家轨迹 ───────────── */
+function loadTrail() {
+  if (!state.selected) return;
+  api("/api/trail?uuid=" + encodeURIComponent(state.selected)).then(function (d) {
+    if (d && d.ok) drawTrail(d.points || []);
+  }).catch(function () {});
+}
+
+function drawTrail(points) {
+  var c = document.getElementById("qTrail");
+  if (!c) return;
+  var dpr = window.devicePixelRatio || 1;
+  var w = c.clientWidth || 600;
+  var h = 160;
+  c.width = Math.round(w * dpr);
+  c.height = Math.round(h * dpr);
+  var g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+
+  var muted = getComputedStyle(document.documentElement).getPropertyValue("--muted") || "#6b7a8d";
+  var pts = (points || []).filter(function (p) { return p && p.w; });
+  var last = pts[pts.length - 1];
+  var own = last ? pts.filter(function (p) { return p.w === last.w; }) : [];
+
+  g.font = "12px -apple-system,'Microsoft YaHei',sans-serif";
+  g.textAlign = "center";
+  if (own.length < 2) {
+    g.fillStyle = muted.trim() || "#6b7a8d";
+    g.fillText("轨迹点还不够（每秒记一个，最多保留 5 分钟）", w / 2, h / 2);
+    return;
+  }
+
+  var minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  own.forEach(function (p) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.z < minZ) minZ = p.z;
+    if (p.z > maxZ) maxZ = p.z;
+  });
+  var spanX = Math.max(1, maxX - minX);
+  var spanZ = Math.max(1, maxZ - minZ);
+  var pad = 18;
+  var scale = Math.min((w - pad * 2) / spanX, (h - pad * 2) / spanZ);
+  var offX = pad + (w - pad * 2 - spanX * scale) / 2;
+  var offZ = pad + (h - pad * 2 - spanZ * scale) / 2;
+
+  function px(p) { return offX + (p.x - minX) * scale; }
+  function py(p) { return offZ + (p.z - minZ) * scale; }
+
+  // 折线
+  g.strokeStyle = "#0d9488";
+  g.lineWidth = 2;
+  g.lineJoin = "round";
+  g.beginPath();
+  own.forEach(function (p, i) {
+    if (i === 0) g.moveTo(px(p), py(p));
+    else g.lineTo(px(p), py(p));
+  });
+  g.stroke();
+
+  // 起点（绿）/ 终点（红）
+  function dot(p, color) {
+    g.beginPath();
+    g.fillStyle = color;
+    g.arc(px(p), py(p), 3.5, 0, Math.PI * 2);
+    g.fill();
+  }
+  dot(own[0], "#059669");
+  dot(own[own.length - 1], "#dc2626");
+
+  g.fillStyle = muted.trim() || "#6b7a8d";
+  g.textAlign = "left";
+  g.fillText("约 " + Math.round(Math.max(spanX, spanZ)) + " 格 · " + own.length + " 个点", 10, h - 8);
+}
+
+/* ───────────── 导出 CSV ───────────── */
+function exportCsv(kind) {
+  var url = "/api/export?limit=1000";
+  if (kind === "chat") {
+    url += "&types=" + chatTypes().join(",");
+    var q = ($("#chatSearch").value || "").trim();
+    if (q) url += "&keyword=" + encodeURIComponent(q);
+  } else {
+    url += "&types=" + LOG_TYPES.join(",");
+    if (state.filter.keyword) url += "&keyword=" + encodeURIComponent(state.filter.keyword);
+    if (state.filter.player) url += "&player=" + encodeURIComponent(state.filter.player);
+  }
+  // 直接用 location 跳转：浏览器会按 Content-Disposition 下载，cookie 也自动带上
+  location.href = url;
+}
+
+/* ───────────── 计划任务 ───────────── */
+function loadTasks() {
+  api("/api/tasks").then(function (d) {
+    var tbody = document.querySelector("#taskTable tbody");
+    if (!tbody) return;
+    var jobs = (d && d.jobs) || [];
+    if (!jobs.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty">还没有配置计划任务' +
+        '（config.yml 的 tasks.jobs）</td></tr>';
+      return;
+    }
+    tbody.innerHTML = jobs.map(function (j) {
+      var next = j.next > 0 ? hhmm(j.next) : "—";
+      return '<tr><td>' + esc(j.label) + '</td><td class="dim">' + esc(j.when) +
+        '</td><td class="r">' + next + "</td></tr>";
+    }).join("");
+  }).catch(function () {});
+}
+
+function hhmm(ms) {
+  var d = new Date(ms);
+  var now = new Date();
+  var sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+  return (sameDay ? "" : (d.getMonth() + 1) + "月" + d.getDate() + "日 ") + hhmmss(ms).slice(0, 5);
+}
+
+/* ───────────── toast ───────────── */
+function toast(msg, kind, undoId) {
+  var el = document.createElement("div");
+  el.className = "toast" + (kind ? " " + kind : "");
+  var span = document.createElement("span");
+  span.textContent = msg;
+  el.appendChild(span);
+  if (undoId) {
+    var btn = document.createElement("button");
+    btn.textContent = "撤销";
+    btn.onclick = function () {
+      btn.disabled = true;
+      undoAction(undoId, el);
+    };
+    el.appendChild(btn);
+  }
+  $("#toasts").appendChild(el);
+  setTimeout(function () {
+    el.style.opacity = "0";
+    el.style.transition = "opacity .3s";
+    setTimeout(function () { el.remove(); }, 320);
+  }, undoId ? 8000 : 2600);
+}
+
+/** 点「撤销」：调后端把刚才那一步反着做一遍。 */
+function undoAction(id, el) {
+  api("/api/undo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: id })
+  }).then(function (d) {
+    if (d && d.ok) {
+      toast(d.msg || "已撤销", "ok");
+      setTimeout(pollSnapshot, 300);
+      setTimeout(loadPlayerDetail, 500);
+    } else {
+      toast((d && d.error) || "撤销失败", "err");
+    }
+    if (el) el.remove();
+  }).catch(function () {
+    toast("撤销请求失败", "err");
+    if (el) el.remove();
+  });
+}
+
+/* ───────────── 主题 ───────────── */
+function applyTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  $("#themeBtn").textContent = t === "dark" ? "浅色" : "深色";
+  try { localStorage.setItem("tw_theme", t); } catch (e) {}
+  setTimeout(redrawAll, 30);
+}
+function toggleTheme() {
+  var cur = document.documentElement.getAttribute("data-theme") || "light";
+  applyTheme(cur === "dark" ? "light" : "dark");
+}
+
+/* ───────────── 请求 ───────────── */
+function api(path, opts) {
+  return fetch(path, Object.assign({ credentials: "same-origin" }, opts || {}))
+    .then(function (r) {
+      if (r.status === 401) { showLogin(); throw new Error("unauthorized"); }
+      return r.json();
+    });
+}
+function postAction(payload) {
+  return api("/api/action", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {})
+  });
+}
+
+/* ───────────── 登录 ───────────── */
+function showLogin() {
+  $("#login").classList.remove("hide");
+  $("#panel").classList.add("hide");
+  if (window.__es) { try { window.__es.close(); } catch (e) {} window.__es = null; }
+}
+function showPanel() {
+  $("#login").classList.add("hide");
+  $("#panel").classList.remove("hide");
+}
+function doLogin() {
+  var pw = $("#pw").value;
+  if (!pw) { $("#loginErr").textContent = "请输入密码"; return; }
+  $("#loginErr").textContent = "";
+  fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ password: pw })
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (d.ok) { showPanel(); boot(); }
+    else { $("#loginErr").textContent = d.error || "登录失败"; }
+  }).catch(function () { $("#loginErr").textContent = "无法连接服务器"; });
+}
+$("#pw").addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); });
+
+function doLogout() {
+  fetch("/api/logout", { method: "POST", credentials: "same-origin" })
+    .finally(function () { showLogin(); });
+}
+
+/* ───────────── 启动 ───────────── */
+var booted = false;
+function boot() {
+  if (!booted) { booted = true; loadUiConfig(); loadHistory(); loadEvents(); }
+  pollSnapshot();
+  connectSse();
+}
+
+/* ───────────── 快照 ───────────── */
+var pollTimer = null;
+function pollSnapshot() {
+  if (pollTimer) clearTimeout(pollTimer);
+  api("/api/snapshot").then(function (d) {
+    if (d && d.ok) renderSnapshot(d);
+  }).catch(function () {}).finally(function () {
+    pollTimer = setTimeout(pollSnapshot, 1000);
+  });
+}
+
+function renderSnapshot(s) {
+  state.snapshot = s;
+  $("#srvName").textContent = s.server.motd + " · " + s.server.type + " " + s.server.version;
+
+  // 顶栏常驻：不管切到哪个 Tab，都能一眼看到服务器是不是还活着
+  $("#liveTps").textContent = s.tps.toFixed(2);
+  $("#liveOnline").textContent = s.online;
+
+  // 只渲染当前可见的 Tab —— 隐藏的页面更新 DOM 是纯浪费
+  if (state.tab === "overview") renderOverview(s);
+  else if (state.tab === "players") renderPlayerTable();
+  else if (state.tab === "system") renderSystem(s);
+
+  renderAlerts(s.alerts);
+  pushPoint(s);
+  if (state.selected) updateDrawer();
+}
+
+function renderOverview(s) {
+  var tpsCls = s.tps >= 19 ? "var(--ok)" : (s.tps >= 18 ? "var(--warn)" : "var(--danger)");
+  $("#vTps").textContent = s.tps.toFixed(2);
+  $("#vTps").style.color = tpsCls;
+  $("#bTps").style.width = Math.min(100, s.tps / 20 * 100) + "%";
+  $("#bTps").style.background = tpsCls;
+  $("#tpsNow").textContent = s.tps.toFixed(2) + " / 20";
+
+  $("#vOnline").innerHTML = s.online + '<span class="u">/ ' + s.maxPlayers + "</span>";
+
+  var memPct = s.memMax > 0 ? s.memUsed / s.memMax * 100 : 0;
+  $("#vMem").innerHTML = s.memUsed + '<span class="u">/ ' + s.memMax + " MB</span>";
+  $("#bMem").style.width = memPct + "%";
+  $("#bMem").style.background = memPct > 90 ? "var(--danger)"
+    : (memPct > 80 ? "var(--warn)" : "var(--accent)");
+  $("#memNow").textContent = s.memUsed + " MB";
+
+  $("#vEnt").innerHTML = s.entities + '<span class="u">/ ' + s.chunks + " 区块</span>";
+  $("#msptNow").textContent = s.mspt == null ? "服务端未提供" : s.mspt.toFixed(1) + " ms";
+
+  renderPlayers(s.players);
+}
+
+function renderSystem(s) {
+  renderWorlds(s.worlds);
+  renderJvm(s.jvm);
+  renderServerInfo(s);
+}
+
+function renderServerInfo(s) {
+  var tbl = document.getElementById("serverInfo");
+  if (!tbl) return;
+  var tb = tbl.querySelector("tbody");
+  if (!tb) return;
+  var rows = [
+    ["服务端", s.server.type + " " + s.server.version],
+    ["MOTD", s.server.motd],
+    ["CPU 核心", s.cores + " 核"],
+    ["最大在线", s.maxPlayers + " 人"],
+    ["曲线点数", state.hist.tps.length + " / " + MAX_POINTS],
+    ["操作日志", (s.eventCount || 0) + " / " + (s.eventCapacity || 0) + " 条"]
+  ];
+  tb.innerHTML = rows.map(function (r) {
+    return '<tr><td class="muted">' + esc(r[0]) + '</td><td class="r">' +
+      esc(String(r[1])) + "</td></tr>";
+  }).join("");
+}
+
+/** 玩家 Tab：完整字段的表格，可搜索。 */
+/** 左栏：在线玩家简略列表（可搜索）。点一行 → 中右两栏显示详情。 */
+/** 玩家 Tab：完整字段的表格，可搜索。点一行打开右侧抽屉。 */
+function renderPlayerTable() {
+  var body = document.getElementById("ptableBody");
+  if (!body) return;
+  var snap = state.snapshot;
+  var list = (snap && snap.players) ? snap.players.slice() : [];
+
+  var inp = document.getElementById("pfSearch");
+  var q = inp ? inp.value.trim().toLowerCase() : "";
+  if (q) {
+    list = list.filter(function (p) {
+      return p.name.toLowerCase().indexOf(q) >= 0
+        || (p.world || "").toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  list.sort(function (a, b) { return b.onlineFor - a.onlineFor; });
+
+  var cnt = document.getElementById("pCount2");
+  if (cnt) cnt.textContent = list.length;
+
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="11" class="empty">' +
+      (q ? "没有匹配的玩家" : "暂无玩家在线") + "</td></tr>";
+    return;
+  }
+
+  body.innerHTML = list.map(function (p) {
+    var sel = state.selected === p.uuid ? " background:var(--accent-soft);" : "";
+    var checked = state.batch[p.uuid] ? " checked" : "";
+    return '<tr class="row" style="' + sel + '" onclick="openPlayer(\'' + p.uuid + '\')">' +
+      '<td class="chk" onclick="event.stopPropagation()">' +
+      '<input type="checkbox"' + checked + ' data-uuid="' + esc(p.uuid) +
+      '" onclick="event.stopPropagation(); togglePlayerSel(this.getAttribute(\'data-uuid\'), this.checked)">' +
+      "</td>" +
+      '<td class="pnm">' + esc(p.name) + "</td>" +
+      "<td>" + esc(p.world) + "</td>" +
+      '<td class="r">' + p.x.toFixed(1) + ", " + p.y.toFixed(1) + ", " + p.z.toFixed(1) + "</td>" +
+      '<td class="r">' + p.bx + ", " + p.bz + "</td>" +
+      '<td class="r">' + p.health.toFixed(1) + " / " + p.maxHealth.toFixed(0) + "</td>" +
+      '<td class="r">' + p.food + "</td>" +
+      '<td class="r">' + p.level + "</td>" +
+      "<td>" + gmLabel(p.gamemode) + "</td>" +
+      '<td class="r">' + (p.ping >= 0 ? p.ping + " ms" : "—") + "</td>" +
+      '<td class="r">' + dur(p.onlineFor) + "</td>" +
+      '<td class="r dim">' + (p.firstPlayed > 0 ? ymd(p.firstPlayed) : "—") + "</td>" +
+      "</tr>";
+  }).join("");
+}
+
+/** 切换 Tab。只渲染新进入的那一页，其余页面保持不动。 */
+/** 从玩家表格点进详情页。地址栏变成 #player/<uuid>，能后退也能收藏。 */
+function openPlayer(uuid) {
+  state.selected = uuid;
+  state.detail = null;
+  state.detailOwner = null;
+  switchTab("player");
+  loadPlayerDetail();
+  loadPageEvents();
+}
+
+function backToPlayers() {
+  state.selected = null;
+  state.detail = null;
+  state.detailOwner = null;
+  switchTab("players");
+}
+
+/** 详情页左栏：玩家简略列表，点谁就换谁，不用退出去。 */
+function paintSideList() {
+  var box = document.getElementById("qList");
+  if (!box) return;
+  var snap = state.snapshot;
+  var list = (snap && snap.players) ? snap.players.slice() : [];
+
+  var inp = document.getElementById("qSearch");
+  var q = inp ? inp.value.trim().toLowerCase() : "";
+  if (q) {
+    list = list.filter(function (p) {
+      return p.name.toLowerCase().indexOf(q) >= 0
+        || (p.world || "").toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  list.sort(function (a, b) { return b.onlineFor - a.onlineFor; });
+
+  var cnt = document.getElementById("qCount");
+  if (cnt) cnt.textContent = list.length;
+
+  if (!list.length) {
+    box.innerHTML = '<div class="empty">' + (q ? "没有匹配" : "暂无玩家在线") + "</div>";
+    return;
+  }
+  box.innerHTML = list.map(function (p) {
+    var hpPct = p.maxHealth > 0 ? Math.max(0, p.health / p.maxHealth * 100) : 0;
+    var sel = state.selected === p.uuid ? " sel" : "";
+    return '<div class="pitem' + sel + '" onclick="jumpPlayer(\'' + p.uuid + '\')">' +
+      '<div class="top"><span class="av">' + esc(p.name.charAt(0).toUpperCase()) + "</span>" +
+      '<span class="nm">' + esc(p.name) + "</span>" +
+      '<span class="pmeta">' + (p.ping >= 0 ? p.ping + "ms" : "—") + "</span></div>" +
+      '<div class="sub"><span>' + esc(p.world) + " · " + p.bx + "," + p.bz + "</span>" +
+      '<span class="hpb"><i style="width:' + hpPct + '%"></i></span></div>' +
+      "</div>";
+  }).join("");
+}
+
+/** 详情页内部换人（不重新走一遍 openPlayer 的加载逻辑）。 */
+function jumpPlayer(uuid) {
+  state.selected = uuid;
+  state.detail = null;
+  state.detailOwner = null;
+  paintSideList();
+  buildPlayerPage();
+  loadPlayerDetail();
+  loadPageEvents();
+  try { history.replaceState(null, "", "#player/" + uuid); } catch (e) {}
+}
+
+/** 详情页中栏 + 右栏的结构（只在换人时建一次）。 */
+/** 详情页右侧：一整块内容，内部分段，不再拆成几张小卡片。 */
+function buildPlayerPage() {
+  var main = document.getElementById("qMain");
+  if (!main) return;
+  var p = findPlayer(state.snapshot);
+  if (!p) {
+    main.innerHTML = '<div class="empty">玩家已离线</div>';
+    return;
+  }
+
+  function kv(label, id) {
+    return '<div class="kv"><span>' + label + '</span><span class="v" id="' + id + '">—</span></div>';
+  }
+
+  var h = "";
+
+  h += '<div class="phead">';
+  h += '<div class="av" id="qAvatar">' + esc(p.name.charAt(0).toUpperCase()) + "</div>";
+  h += '<div style="flex:1;min-width:0">';
+  h += '<div class="nm" id="qName">' + esc(p.name) + "</div>";
+  h += '<div class="uuid" id="qUuid">' + esc(p.uuid) + "</div>";
+  h += "</div>";
+  h += '<div class="flags" id="qFlags"></div>';
+  h += "</div>";
+
+  h += '<div class="pgrid">';
+
+  h += '<section class="pbox" data-g="overview"><h4>位置</h4>';
+  h += kv("坐标", "qXyz") + kv("世界", "qWorld") + kv("区块", "qChunk") + kv("朝向", "qYaw");
+  h += "</section>";
+
+  h += '<section class="pbox" data-g="overview"><h4>状态</h4>';
+  h += kv("血量", "qHp") + kv("饥饿", "qFood") + kv("等级", "qLevel") + kv("模式", "qGm");
+  h += "</section>";
+
+  h += '<section class="pbox" data-g="overview"><h4>概况</h4>';
+  h += kv("延迟", "qPing") + kv("本次在线", "qOnline") + kv("首次进服", "qFirst");
+  h += '<div class="kv" id="qIpRow" style="display:none"><span>IP</span><span class="v" id="qIp">—</span></div>';
+  h += "</section>";
+
+  h += '<section class="pbox full" data-g="overview"><h4>血量与饥饿</h4>';
+  h += '<div class="hpbar" style="margin:0 0 8px"><i id="qHpBar" style="width:0%"></i></div>';
+  h += '<div class="hpbar foodbar" style="margin:0"><i id="qFoodBar" style="width:0%"></i></div>';
+  h += "</section>";
+
+  h += '<section class="pbox full" data-g="inv"><h4>装备与手持</h4><div class="inv6" id="qArmor"></div></section>';
+
+  h += '<section class="pbox full" data-g="inv"><h4>背包</h4><div id="qInvBox">' +
+    '<div class="empty small">加载中…</div></div></section>';
+
+  h += '<section class="pbox full" data-g="act"><h4>操作</h4>';
+
+  // 顶部这一条只用来筛选 —— 一屏堆二十多行太乱，按组看就好
+  h += '<div class="pfilters" id="opFilter">';
+  [["all", "全部"], ["state", "状态"], ["items", "物品"], ["pos", "位置"],
+    ["notify", "沟通"], ["punish", "处罚"], ["econ", "经济"]].forEach(function (c) {
+      h += '<button class="chip' + (state.opGroup === c[0] ? " on" : "") + '" data-og="' + c[0] +
+        '" onclick="setOpGroup(\'' + c[0] + '\')">' + c[1] + "</button>";
+    });
+  h += "</div>";
+
+  // ── 状态 ──
+  h += '<div class="opsec" data-og="state">';
+  h += '<div class="opgroup">状态</div>';
+  h += opRow("治疗", '<span class="small muted">回满血 + 喂饱 + 清负面</span>',
+    '<button onclick="act(\'heal\')">治疗</button>');
+  h += opRow("清除效果", '<span class="small muted">药水效果全部清掉</span>',
+    '<button onclick="act(\'cleareffects\')">清除</button>');
+  h += opRow("给药水效果",
+    '<select id="qacEff">' + EFFECTS.map(function (e) {
+      return '<option value="' + e[0] + '">' + e[1] + "</option>";
+    }).join("") + '</select>' +
+    '<input id="qacEffSec" class="num" value="60" title="持续秒数"><span class="unit">秒</span>' +
+    '<input id="qacEffLv" class="num" value="1" title="等级 1~10"><span class="unit">级</span>',
+    '<button onclick="actGiveEffect()">给药</button>');
+  h += opRow("经验等级", '<input id="qacExp" class="num" placeholder="等级">',
+    '<button onclick="actExp()">设置</button>');
+  h += opRow("游戏模式",
+    '<select id="qacGm">' + ['SURVIVAL', 'CREATIVE', 'ADVENTURE', 'SPECTATOR'].map(function (g) {
+      return '<option value="' + g + '">' + gmLabel(g) + "</option>";
+    }).join("") + '</select>',
+    '<button onclick="actGamemode(\'qacGm\')">切换</button>');
+  h += opRow("旁观", '<span class="small muted">隐形巡查，再点一次恢复原模式</span>',
+    '<button onclick="act(\'vanish\')">旁观 / 恢复</button>');
+  h += opRow("飞行",
+    '<select id="qacFly"><option value="on">开启</option><option value="off">关闭</option></select>',
+    '<button onclick="actFly()">应用</button>');
+  h += opRow("隐身", '<span class="small muted">5 分钟，再点一次现身</span>',
+    '<button onclick="act(\'invisible\')">隐身 / 现身</button>');
+  h += "</div>";
+
+  // ── 物品 ──
+  h += '<div class="opsec" data-og="items">';
+  h += '<div class="opgroup">物品</div>';
+  h += opRow("给物品",
+    '<input id="qacItem" list="opItems" placeholder="物品名（中文或英文）">' +
+    '<input id="qacItemN" class="num" value="1" title="数量">',
+    '<button onclick="actGiveItem()">给予</button>');
+  h += opRow("修复耐久", '<span class="small muted">手持 + 全身装备</span>',
+    '<button onclick="act(\'repair\')">修复</button>');
+  h += opRow("拿走某格", '<span class="small muted">到「背包」页签点那一格</span>', '');
+  h += opRow("清掉落物", '<input id="qacNearR" class="num" value="16"><span class="unit">格</span>',
+    '<button onclick="actItemNear()">清理</button>');
+  h += opRow("清空背包", '<span class="small muted danger-text">不可撤销</span>',
+    '<button class="danger" onclick="actClearInv()">清空</button>');
+  h += "</div>";
+
+  // ── 位置 ──
+  h += '<div class="opsec" data-og="pos">';
+  h += '<div class="opgroup">位置</div>';
+  h += opRow("传送坐标", '<input id="qacTp" placeholder="x y z，例如 100 64 200">',
+    '<button onclick="actTeleport(\'qacTp\')">传送</button>');
+  h += opRow("传到玩家", '<input id="qacTo" placeholder="另一个在线玩家的名字">',
+    '<button onclick="actTpPlayer()">传送</button>');
+  h += opRow("送回出生点", '<span class="small muted">当前世界的出生点</span>',
+    '<button onclick="act(\'spawn\')">送回</button>');
+  h += opRow("冻结", '<span class="small muted">原地锁住，动了就拉回</span>',
+    '<button onclick="act(\'freeze\')">冻结 / 解冻</button>');
+  h += opRow("坐标记录", '<span class="small muted">先记一下，出事能拉回来</span>',
+    '<button onclick="act(\'saveloc\')">记录</button>' +
+    '<button onclick="act(\'recall\')">拉回</button>');
+  h += '<div class="trailwrap"><div class="trailhead"><span>最近走位（俯视）</span>' +
+    '<button onclick="loadTrail()">刷新</button></div>' +
+    '<canvas id="qTrail" height="160"></canvas></div>';
+  h += "</div>";
+
+  // ── 沟通 ──
+  h += '<div class="opsec" data-og="notify">';
+  h += '<div class="opgroup">沟通</div>';
+  h += opRow("发消息", '<input id="qacMsg" placeholder="输给这个玩家看的内容">',
+    '<button onclick="actMessage(\'qacMsg\')">发送</button>');
+  h += opRow("屏幕标题", '<input id="qacTitle" placeholder="大字">' +
+    '<input id="qacSub" placeholder="小字（可空）">',
+    '<button onclick="actTitle()">发送</button>');
+  h += opRow("动作栏", '<input id="qacBar" placeholder="准星上方那一行">',
+    '<button onclick="actActionBar()">发送</button>');
+  h += opRow("音效", '<select id="qacSound">' + SOUNDS.map(function (sn) {
+      return '<option value="' + sn[0] + '">' + sn[1] + "</option>";
+    }).join("") + '</select>',
+    '<button onclick="actSound()">播放</button>');
+  h += "</div>";
+
+  // ── 处罚 ──
+  h += '<div class="opsec" data-og="punish">';
+  h += '<div class="opgroup">处罚</div>';
+  h += opRow("踢出", '<input id="qacKick" placeholder="原因（可空）">',
+    '<button class="danger" onclick="actKick(\'qacKick\')">踢出</button>');
+  h += opRow("封禁", '<span class="small muted danger-text">需要在后台 /pardon 才能解</span>',
+    '<button class="danger" onclick="actBan()">封禁</button>');
+  h += opRow("禁言", '<input id="qacMute" class="num" value="10"><span class="unit">分钟</span>',
+    '<button onclick="actMute()">应用</button>');
+  h += opRow("白名单", '<span class="small muted">加入 / 移出这个玩家</span>',
+    '<button onclick="actWhitelist(\'add\')">加入</button>' +
+    '<button onclick="actWhitelist(\'remove\')">移出</button>' +
+    '<button class="danger" onclick="actWhitelistToggle()">开关</button>');
+  h += opRow("OP", '<span class="small muted">慎用</span>',
+    '<button class="danger" onclick="actOp(\'on\')">给予</button>' +
+    '<button onclick="actOp(\'off\')">撤销</button>');
+  h += "</div>";
+
+  // ── 经济 ──
+  h += '<div class="opsec" data-og="econ">';
+  h += '<div class="opgroup">经济（需要 Vault）</div>';
+  h += opRow("余额", '<span class="small muted">查这个玩家的钱</span>',
+    '<button onclick="act(\'balance\')">查询</button>');
+  h += opRow("增减", '<input id="qacMoney" class="num" placeholder="金额">',
+    '<button onclick="actMoney(\'give\')">给予</button>' +
+    '<button class="danger" onclick="actMoney(\'take\')">扣除</button>');
+  h += "</div>";
+
+  h += '<div class="hint">所有操作都会记进操作日志（类型「管理」）。</div>';
+  h += "</section>";
+
+
+  h += '<section class="pbox full" data-g="log"><h4>最近操作</h4>';
+  h += '<div class="pfilters" id="qLogFilter">';
+  [["", "全部"], ["BREAK", "破坏"], ["PLACE", "放置"], ["CONTAINER", "容器"],
+    ["COMMAND", "命令"], ["CHAT", "聊天"], ["DEATH", "死亡"], ["ADMIN", "管理"]]
+    .forEach(function (c) {
+      h += '<button class="chip' + (state.plog.type === c[0] ? " on" : "") +
+        '" data-type="' + c[0] + '" onclick="setPlayerLogType(\'' + c[0] + '\')">' + c[1] + "</button>";
+    });
+  h += '<input id="qLogKw" placeholder="搜索内容" value="' + esc(state.plog.keyword) +
+    '" oninput="onPlayerLogKeyword()">';
+  h += "</div>";
+  h += '<div id="qEvents"><div class="empty small">加载中…</div></div></section>';
+
+  h += "</div>";
+
+  armorSigPage = "";   // 换了玩家，DOM 是新盖的，签名缓存必须清掉
+  main.innerHTML = h;
+  applyPlayerTab();
+  updatePlayerPage();
+  renderPageEvents();
+  if (state.detail) renderPageInv();
+}
+
+/** 详情页二级 Tab：概览 / 背包 / 操作 / 日志 */
+function setPlayerTab(name) {
+  state.ptab = name;
+  applyPlayerTab();
+}
+
+function applyPlayerTab() {
+  var name = state.ptab || "overview";
+  document.querySelectorAll("#qTabs .ptab").forEach(function (b) {
+    b.classList.toggle("on", b.getAttribute("data-ptab") === name);
+  });
+  var main = document.getElementById("qMain");
+  if (!main) return;
+  main.querySelectorAll(".pgrid > [data-g]").forEach(function (el) {
+    el.classList.toggle("hide", el.getAttribute("data-g") !== name);
+  });
+  // 切到「操作」时才去拉物品清单（一千多项，不切就不下）
+  if (name === "act") {
+    loadItems();
+    applyOpGroup();
+    loadTrail();
+  }
+}
+
+/** 操作页的第二层筛选：全部 / 状态 / 物品 / 位置 / 沟通 / 处罚 / 经济。 */
+function setOpGroup(g) {
+  state.opGroup = g || "all";
+  document.querySelectorAll("#opFilter .chip").forEach(function (b) {
+    b.classList.toggle("on", (b.getAttribute("data-og") || "all") === state.opGroup);
+  });
+  applyOpGroup();
+}
+
+function applyOpGroup() {
+  var g = state.opGroup || "all";
+  document.querySelectorAll("#qMain .opsec").forEach(function (el) {
+    el.classList.toggle("hide", g !== "all" && el.getAttribute("data-og") !== g);
+  });
+}
+
+function setTxt2(id, v) {
+  var e = document.getElementById(id);
+  if (e) e.textContent = v;
+}
+
+/** 详情页每秒刷数字。 */
+function updatePlayerPage() {
+  var p = findPlayer(state.snapshot);
+  var nameEl = document.getElementById("qName");
+  if (!nameEl) return;
+  if (!p) {
+    nameEl.textContent = "（已离线）";
+    return;
+  }
+  nameEl.textContent = p.name;
+  setTxt2("qUuid", p.uuid);
+
+  var flags = [];
+  if (p.onFire) flags.push('<span class="flag fire">着火</span>');
+  if (p.sneaking) flags.push('<span class="flag">潜行</span>');
+  if (p.flying) flags.push('<span class="flag fly">飞行</span>');
+  if (p.sprinting) flags.push('<span class="flag">冲刺</span>');
+  if (p.invulnerable) flags.push('<span class="flag">无敌</span>');
+  var fb = document.getElementById("qFlags");
+  if (fb) fb.innerHTML = flags.join("");
+
+  setTxt2("qXyz", p.x.toFixed(2) + ", " + p.y.toFixed(2) + ", " + p.z.toFixed(2));
+  setTxt2("qWorld", p.world);
+  setTxt2("qChunk", p.bx + ", " + p.bz);
+  setTxt2("qYaw", Math.round(p.yaw) + "°");
+
+  var hpPct = p.maxHealth > 0 ? Math.max(0, p.health / p.maxHealth * 100) : 0;
+  setTxt2("qHp", p.health.toFixed(1) + " / " + p.maxHealth.toFixed(0));
+  var hb = document.getElementById("qHpBar");
+  if (hb) hb.style.width = hpPct + "%";
+
+  setTxt2("qFood", p.food + " / 20");
+  var fb2 = document.getElementById("qFoodBar");
+  if (fb2) fb2.style.width = (p.food / 20 * 100) + "%";
+
+  setTxt2("qLevel", p.level);
+  setTxt2("qGm", gmLabel(p.gamemode));
+  setTxt2("qPing", p.ping >= 0 ? p.ping + " ms" : "无法获取");
+  setTxt2("qOnline", dur(p.onlineFor));
+  setTxt2("qFirst", p.firstPlayed > 0 ? ymd(p.firstPlayed) : "未知");
+
+  var ipRow = document.getElementById("qIpRow");
+  if (ipRow) {
+    if (p.ip) { ipRow.style.display = ""; setTxt2("qIp", p.ip); }
+    else { ipRow.style.display = "none"; }
+  }
+
+  var sel = document.getElementById("qacGm");
+  if (sel && sel.value !== p.gamemode) sel.value = p.gamemode;
+
+  renderPageArmor();
+}
+
+/** 装备栏一秒调一次，内容没变就别重建 DOM（省得图片每秒重挂一次）。 */
+function renderPageArmor() {
+  var box = document.getElementById("qArmor");
+  if (!box) return;
+  var armor = {};
+  var d = state.detail;
+  if (d && d.armor) {
+    d.armor.forEach(function (it) { armor[it.slot] = it; });
+  }
+  var html =
+    cellHtml(armor[3], "头盔") +
+    cellHtml(armor[2], "胸甲") +
+    cellHtml(armor[1], "护腿") +
+    cellHtml(armor[0], "靴子") +
+    cellHtml(d ? d.hand : null, "主手") +
+    cellHtml(d ? d.offhand : null, "副手");
+  if (html === armorSigPage) return;
+  armorSigPage = html;
+  box.innerHTML = html;
+}
+var armorSigPage = "";
+
+function renderPageInv() {
+  var box = document.getElementById("qInvBox");
+  if (!box || !state.detail) return;
+  var d = state.detail;
+  var byslot = {};
+  (d.inventory || []).forEach(function (it) { byslot[it.slot] = it; });
+
+  var html = "";   // 上面已经有「背包」标题了，这里不再重复一遍
+  html += '<div class="invlabel">主背包 <span class="small muted">（点格子可以拿走）</span></div><div class="inv">';
+  for (var i = 9; i < 36; i++) html += slotHtml(byslot[i], i);
+  html += "</div>";
+  html += '<div class="invlabel">快捷栏</div><div class="inv">';
+  for (var j = 0; j < 9; j++) html += slotHtml(byslot[j], j);
+  html += "</div>";
+
+  if (d.nearby) {
+    html += '<div class="kv" style="margin-top:8px"><span>周围 ' + d.nearby.radius + ' 格</span>' +
+      '<span class="v">' + d.nearby.total + " 实体（掉落物 " + d.nearby.items +
+      " / 生物 " + d.nearby.mobs + "）</span></div>";
+  }
+  box.innerHTML = html;
+  renderPageArmor();
+}
+
+var pageEvents = [];
+function loadPageEvents() {
+  if (!state.selected) return;
+  var p = findPlayer(state.snapshot);
+  var name = p ? p.name : "";
+  if (!name) return;
+  var url = "/api/events?limit=100&player=" + encodeURIComponent(name);
+  if (state.plog.type) url += "&type=" + encodeURIComponent(state.plog.type);
+  if (state.plog.keyword) url += "&keyword=" + encodeURIComponent(state.plog.keyword);
+  api(url).then(function (d) {
+    if (d && d.ok) { pageEvents = d.events; renderPageEvents(); }
+  }).catch(function () {});
+}
+
+/** 详情页日志：点类型胶囊重新拉一次。 */
+function setPlayerLogType(t) {
+  state.plog.type = t;
+  document.querySelectorAll("#qLogFilter .chip").forEach(function (b) {
+    b.classList.toggle("on", (b.getAttribute("data-type") || "") === t);
+  });
+  loadPageEvents();
+}
+
+var logKwTimer = null;
+/** 关键词输入：停手 280ms 再发请求，免得一个字一次请求。 */
+function onPlayerLogKeyword() {
+  var el = document.getElementById("qLogKw");
+  state.plog.keyword = (el && el.value ? el.value : "").trim().toLowerCase();
+  if (logKwTimer) clearTimeout(logKwTimer);
+  logKwTimer = setTimeout(loadPageEvents, 280);
+}
+
+function renderPageEvents() {
+  var box = document.getElementById("qEvents");
+  if (!box) return;
+  if (!pageEvents.length) {
+    box.innerHTML = '<div class="empty small">' +
+      (state.plog.type || state.plog.keyword ? "没有匹配的记录" : "没有记录") + "</div>";
+    return;
+  }
+  box.innerHTML = pageEvents.slice(0, 100).map(function (a) {
+    return '<div class="plogrow">' +
+      '<span class="et">' + hhmmss(a.t) + "</span>" +
+      '<span class="etag t-' + a.type + '">' + actionLabel(a.type) + "</span>" +
+      '<span class="ed">' + esc(a.detail) + "</span></div>";
+  }).join("");
+}
+
+function switchTab(name) {
+  state.tab = name;
+  // 详情页也算「玩家」这一栏，Tab 高亮跟着走
+  var tabKey = (name === "player") ? "players" : name;
+  document.querySelectorAll(".tab").forEach(function (b) {
+    b.classList.toggle("on", b.getAttribute("data-tab") === tabKey);
+  });
+  ["overview", "players", "chat", "logs", "world", "plugin", "bans", "system", "player"]
+    .forEach(function (k) {
+    var el = document.getElementById("pane-" + k);
+    if (el) el.classList.toggle("hide", k !== name);
+  });
+
+  if (name === "overview") {
+    if (state.snapshot) renderOverview(state.snapshot);
+    setTimeout(redrawAll, 20);
+  } else if (name === "players") {
+    renderPlayerTable();
+  } else if (name === "chat") {
+    loadChat();
+  } else if (name === "logs") {
+    renderEvents();
+  } else if (name === "world") {
+    loadWorlds();
+  } else if (name === "plugin") {
+    loadPlugins();
+  } else if (name === "bans") {
+    loadBans();
+  } else if (name === "system") {
+    if (state.snapshot) renderSystem(state.snapshot);
+    loadTasks();
+    loadPunishments();
+    loadUpdate();
+  } else if (name === "player") {
+    paintSideList();
+    buildPlayerPage();
+  }
+  try {
+    var hash = (name === "player" && state.selected) ? "player/" + state.selected : name;
+    history.replaceState(null, "", "#" + hash);
+  } catch (err) {
+    // 某些环境下 replaceState 会抛（file:// 之类），不影响使用
+  }
+}
+
+function renderWorlds(list) {
+  var tb = $("#worldTable").querySelector("tbody");
+  if (!list || !list.length) {
+    tb.innerHTML = '<tr><td colspan="5" class="empty">暂无数据</td></tr>';
+    return;
+  }
+  tb.innerHTML = list.map(function (w) {
+    return "<tr><td>" + esc(w.name) + "</td>" +
+      '<td><span class="envtag">' + envLabel(w.env) + "</span></td>" +
+      '<td class="r">' + w.players + "</td>" +
+      '<td class="r">' + w.chunks + "</td>" +
+      '<td class="r">' + w.entities + "</td></tr>";
+  }).join("");
+}
+
+function renderJvm(j) {
+  var tb = $("#jvmTable").querySelector("tbody");
+  if (!j) {
+    tb.innerHTML = '<tr><td colspan="2" class="empty">暂无数据</td></tr>';
+    return;
+  }
+  var rows = [
+    ["运行时长", dur(Math.floor(j.uptimeMs / 1000))],
+    ["GC 次数", j.gcCount + " 次 / " + (j.gcTimeMs / 1000).toFixed(1) + " 秒"],
+    ["堆内存", j.heapUsed + " / " + (j.heapMax > 0 ? j.heapMax : j.heapCommitted) + " MB"],
+    ["非堆内存", j.nonHeapUsed + " MB"],
+    ["线程数", j.threads + " 个"],
+    ["CPU 核心", (state.snapshot ? state.snapshot.cores : "—") + " 核"]
+  ];
+  tb.innerHTML = rows.map(function (r) {
+    return '<tr><td class="muted">' + r[0] + '</td><td class="r">' + esc(r[1]) + "</td></tr>";
+  }).join("");
+}
+
+/* ───────────── 玩家表 ───────────── */
+function renderPlayers(list) {
+  var box = $("#plist");
+  $("#pCount").textContent = list.length;
+  if (!list.length) { box.innerHTML = '<div class="empty">暂无玩家在线</div>'; return; }
+
+  list = list.slice().sort(function (a, b) { return b.onlineFor - a.onlineFor; });
+
+  box.innerHTML = list.map(function (p) {
+    var hpPct = p.maxHealth > 0 ? Math.max(0, p.health / p.maxHealth * 100) : 0;
+    var sel = state.selected === p.uuid ? " sel" : "";
+    return '<div class="prow' + sel + '" onclick="selectPlayer(\'' + p.uuid + '\')">' +
+      '<div><div class="pname"><span class="avatar">' + esc(p.name.charAt(0).toUpperCase()) +
+      '</span>' + esc(p.name) + '</div>' +
+      '<div class="pmeta">' + esc(p.world) + " · " + p.bx + ", " + p.bz + " 区块</div></div>" +
+      '<div class="pmeta">' + p.x.toFixed(1) + ", " + p.y.toFixed(1) + ", " + p.z.toFixed(1) + "</div>" +
+      '<div class="hp" title="' + p.health + "/" + p.maxHealth + '"><i style="width:' + hpPct + '%"></i></div>' +
+      '<div class="pmeta">' + (p.ping >= 0 ? p.ping + "ms" : "—") + "</div>" +
+      "</div>";
+  }).join("");
+}
+
+function selectPlayer(uuid) {
+  state.selected = uuid;
+  state.detail = null;
+  var dr = document.getElementById("drawer");
+  if (dr) dr.classList.add("open");
+  if (state.tab === "players") renderPlayerTable();
+  if (state.snapshot) renderPlayers(state.snapshot.players);
+  buildDrawer();
+  loadPlayerDetail();
+  loadPlayerEvents();
+}
+function closeDrawer() {
+  state.selected = null;
+  state.detail = null;
+  var dr = document.getElementById("drawer");
+  if (dr) dr.classList.remove("open");
+  if (state.tab === "players") renderPlayerTable();
+  if (state.snapshot) renderPlayers(state.snapshot.players);
+}
+
+function findPlayer(snap) {
+  if (!snap || !state.selected) return null;
+  for (var i = 0; i < snap.players.length; i++) {
+    if (snap.players[i].uuid === state.selected) return snap.players[i];
+  }
+  return null;
+}
+
+function setTxt(id, v) {
+  var e = document.getElementById(id);
+  if (e) e.textContent = v;
+}
+
+/**
+ * 抽屉结构只在「选中玩家」时建一次。
+ *
+ * 之前的写法是每秒重建整个 dBody —— 结果背包刚渲染出来就被下一次快照冲掉，
+ * 而且正在输入的「踢出原因」也会被清空。现在改成：结构建一次，之后每秒只改数字。
+ */
+/**
+ * 渲染玩家详情。
+ *
+ * 中栏放「他是谁、在哪、什么状态、穿了什么、刚做了什么」，
+ * 右栏放「包里有什么、能对他做什么」。原来这些全塞在一个浮层抽屉里，
+ * 一屏看不到底，还得来回滚。
+ */
+/** 渲染右侧抽屉：位置、状态、装备、背包、操作、最近记录，单列排下来。 */
+function buildDrawer() {
+  var box = document.getElementById("dBody");
+  if (!box) return;
+  var p = findPlayer(state.snapshot);
+  if (!p) {
+    box.innerHTML = '<div class="empty">玩家已离线</div>';
+    return;
+  }
+
+  $("#dName").textContent = p.name;
+  $("#dUuid").textContent = p.uuid;
+
+  var h = "";
+  h += '<div class="flags" id="dFlags"></div>';
+
+  h += '<div class="dsec" style="margin-top:12px"><h3>位置</h3>';
+  h += '<div class="kv"><span>坐标</span><span class="v" id="dXyz">—</span></div>';
+  h += '<div class="kv"><span>世界</span><span class="v" id="dWorld">—</span></div>';
+  h += '<div class="kv"><span>区块</span><span class="v" id="dChunk">—</span></div>';
+  h += '<div class="kv"><span>朝向</span><span class="v" id="dYaw">—</span></div>';
+  h += "</div>";
+
+  h += '<div class="dsec"><h3>状态</h3>';
+  h += '<div class="kv"><span>血量</span><span class="v" id="dHp">—</span></div>';
+  h += '<div class="hpbar"><i id="dHpBar" style="width:0%"></i></div>';
+  h += '<div class="kv"><span>饥饿</span><span class="v" id="dFood">—</span></div>';
+  h += '<div class="hpbar foodbar"><i id="dFoodBar" style="width:0%"></i></div>';
+  h += '<div class="kv"><span>等级</span><span class="v" id="dLevel">—</span></div>';
+  h += '<div class="kv"><span>模式</span><span class="v" id="dGm">—</span></div>';
+  h += '<div class="kv"><span>延迟</span><span class="v" id="dPing">—</span></div>';
+  h += '<div class="kv"><span>本次在线</span><span class="v" id="dOnline">—</span></div>';
+  h += '<div class="kv"><span>首次进服</span><span class="v" id="dFirst">—</span></div>';
+  h += '<div class="kv" id="dIpRow" style="display:none"><span>IP</span><span class="v" id="dIp">—</span></div>';
+  h += "</div>";
+
+  h += '<div class="dsec"><h3>装备与手持</h3><div class="inv6"></div></div>';
+
+  h += '<div class="dsec" id="dInvBox"><h3>背包</h3>' +
+    '<div class="empty small">加载中…</div></div>';
+
+  h += '<div class="dsec"><h3>操作</h3>';
+  h += '<div class="actgrid">';
+  h += '<button onclick="act(\'heal\')">治疗</button>';
+  h += '<button onclick="act(\'vanish\')">旁观 / 恢复</button>';
+  h += '<button onclick="act(\'clearitems\')">清掉落物</button>';
+  h += '<button class="danger" onclick="actBan()">封禁</button>';
+  h += "</div>";
+  h += '<div class="actrow"><input id="acMsg" placeholder="发一条消息"><button onclick="actMessage()">发送</button></div>';
+  h += '<div class="actrow"><select id="acGm">' +
+    ['SURVIVAL', 'CREATIVE', 'ADVENTURE', 'SPECTATOR'].map(function (g) {
+      return '<option value="' + g + '">' + gmLabel(g) + "</option>";
+    }).join("") + '</select><button onclick="actGamemode()">切换模式</button></div>';
+  h += '<div class="actrow"><input id="acTp" placeholder="x y z（当前世界）"><button onclick="actTeleport()">传送</button></div>';
+  h += '<div class="actrow"><input id="acKick" placeholder="踢出原因（可空）"><button class="danger" onclick="actKick()">踢出</button></div>';
+  h += '<div class="hint">所有操作都会记进操作日志（类型「管理」）。</div>';
+  h += "</div>";
+
+  h += '<div class="dsec"><h3>最近操作</h3><div id="dEvents">' +
+    '<div class="empty small">加载中…</div></div></div>';
+
+  box.innerHTML = h;
+  updateDrawer();
+  renderPlayerEvents();
+  if (state.detail) renderInventory();
+}
+
+/** 装备与手持的 6 个格子。背包数据里没有盔甲信息时表现为空格。 */
+function renderArmorSlots(p) {
+  var box = document.querySelector("#dBody .inv6");
+  if (!box) return;
+  var armor = {};
+  if (state.detail && state.detail.armor) {
+    state.detail.armor.forEach(function (it) { armor[it.slot] = it; });
+  }
+  box.innerHTML =
+    cellHtml(armor[3], "头盔") +
+    cellHtml(armor[2], "胸甲") +
+    cellHtml(armor[1], "护腿") +
+    cellHtml(armor[0], "靴子") +
+    cellHtml(state.detail ? state.detail.hand : null, "主手") +
+    cellHtml(state.detail ? state.detail.offhand : null, "副手");
+}
+
+/** 每秒只更新数字，不动 DOM 结构。 */
+/** 每秒只更新数字，不动 DOM 结构。 */
+function updateDrawer() {
+  var p = findPlayer(state.snapshot);
+  var nameEl = document.getElementById("dName");
+  if (!nameEl) return;
+  if (!p) {
+    nameEl.textContent = "（已离线）";
+    return;
+  }
+  nameEl.textContent = p.name;
+  setTxt("dUuid", p.uuid);
+
+  var flags = [];
+  if (p.onFire) flags.push('<span class="flag fire">着火</span>');
+  if (p.sneaking) flags.push('<span class="flag">潜行</span>');
+  if (p.flying) flags.push('<span class="flag fly">飞行</span>');
+  if (p.sprinting) flags.push('<span class="flag">冲刺</span>');
+  if (p.invulnerable) flags.push('<span class="flag">无敌</span>');
+  var fb = document.getElementById("dFlags");
+  if (fb) fb.innerHTML = flags.join("");
+
+  setTxt("dXyz", p.x.toFixed(2) + ", " + p.y.toFixed(2) + ", " + p.z.toFixed(2));
+  setTxt("dWorld", p.world);
+  setTxt("dChunk", p.bx + ", " + p.bz);
+  setTxt("dYaw", Math.round(p.yaw) + "°");
+
+  var hpPct = p.maxHealth > 0 ? Math.max(0, p.health / p.maxHealth * 100) : 0;
+  setTxt("dHp", p.health.toFixed(1) + " / " + p.maxHealth.toFixed(0));
+  var hb = document.getElementById("dHpBar");
+  if (hb) hb.style.width = hpPct + "%";
+
+  setTxt("dFood", p.food + " / 20");
+  var fb2 = document.getElementById("dFoodBar");
+  if (fb2) fb2.style.width = (p.food / 20 * 100) + "%";
+
+  setTxt("dLevel", p.level);
+  setTxt("dGm", gmLabel(p.gamemode));
+  setTxt("dPing", p.ping >= 0 ? p.ping + " ms" : "无法获取");
+  setTxt("dOnline", dur(p.onlineFor));
+  setTxt("dFirst", p.firstPlayed > 0 ? ymd(p.firstPlayed) : "未知");
+
+  var ipRow = document.getElementById("dIpRow");
+  if (ipRow) {
+    if (p.ip) { ipRow.style.display = ""; setTxt("dIp", p.ip); }
+    else { ipRow.style.display = "none"; }
+  }
+
+  var sel = document.getElementById("acGm");
+  if (sel && sel.value !== p.gamemode) sel.value = p.gamemode;
+}
+
+/* ───────────── 背包 ───────────── */
+function loadPlayerDetail() {
+  if (!state.selected) return;
+  api("/api/player?uuid=" + encodeURIComponent(state.selected))
+    .then(function (d) {
+      if (d && d.ok) {
+        state.detail = d;
+        // 抽屉和详情页是两个容器，写错地方就会永远停在「加载中」
+        if (state.tab === "player") {
+          renderPageInv();
+          renderPageArmor();
+        } else {
+          renderInventory();
+        }
+      } else if (d) {
+        state.detail = null;
+        if (state.tab === "player") {
+          var b = document.getElementById("qInvBox");
+          if (b) b.innerHTML = '<h4>背包</h4><div class="empty small">' +
+            esc(d.error || "加载失败") + "</div>";
+        } else {
+          renderInvError(d.error || "加载失败");
+        }
+      }
+    }).catch(function () {});
+}
+
+function renderInvError(msg) {
+  var box = $("#dInvBox");
+  if (box) box.innerHTML = "<h3>背包</h3><div class=\"empty small\">" + esc(msg) + "</div>";
+}
+
+/** 按材质猜一个代表色，让背包格子一眼能分出是哪类东西。 */
+function itemColor(type) {
+  var t = (type || "").toUpperCase();
+  if (t.indexOf("DIAMOND") >= 0) return "#22d3ee";
+  if (t.indexOf("EMERALD") >= 0) return "#10b981";
+  if (t.indexOf("GOLD") >= 0) return "#f59e0b";
+  if (t.indexOf("IRON") >= 0) return "#94a3b8";
+  if (t.indexOf("NETHERITE") >= 0) return "#44403c";
+  if (t.indexOf("REDSTONE") >= 0) return "#dc2626";
+  if (t.indexOf("LAPIS") >= 0) return "#2563eb";
+  if (t.indexOf("COAL") >= 0) return "#334155";
+  if (t.indexOf("_LOG") >= 0 || t.indexOf("PLANKS") >= 0 || t.indexOf("WOOD") >= 0) return "#a16207";
+  if (t.indexOf("LEAVES") >= 0 || t.indexOf("SAPLING") >= 0) return "#16a34a";
+  if (t.indexOf("_ORE") >= 0) return "#78716c";
+  if (t.indexOf("SWORD") >= 0 || t.indexOf("AXE") >= 0 || t.indexOf("PICKAXE") >= 0
+    || t.indexOf("SHOVEL") >= 0 || t.indexOf("HOE") >= 0 || t.indexOf("BOW") >= 0) return "#0ea5e9";
+  if (t.indexOf("HELMET") >= 0 || t.indexOf("CHESTPLATE") >= 0 || t.indexOf("LEGGINGS") >= 0
+    || t.indexOf("BOOTS") >= 0) return "#7c3aed";
+  if (t.indexOf("POTION") >= 0) return "#a855f7";
+  if (t.indexOf("APPLE") >= 0 || t.indexOf("BREAD") >= 0 || t.indexOf("COOKED") >= 0
+    || t.indexOf("BEEF") >= 0 || t.indexOf("PORK") >= 0 || t.indexOf("CHICKEN") >= 0) return "#ea580c";
+  if (t.indexOf("STONE") >= 0 || t.indexOf("COBBLE") >= 0) return "#6b7280";
+  if (t.indexOf("DIRT") >= 0 || t.indexOf("GRASS") >= 0) return "#92400e";
+  if (t.indexOf("SAND") >= 0) return "#eab308";
+  return "#64748b";
+}
+
+/** 前端用到的少量配置，登录后从 /api/config 拉一次。 */
+var UI = {
+  iconMode: "honghemc",
+  iconBase: "https://honghemc.cn/thumbs/images/",
+  iconCdn: "https://mc-heads.net/item/{item}",
+  iconMap: null,
+  actionsEnabled: true
+};
+
+function loadUiConfig() {
+  api("/api/config").then(function (d) {
+    if (!d || !d.ok) return;
+    UI.iconMode = d.itemIcons || "honghemc";
+    UI.iconBase = d.itemIconBase || UI.iconBase;
+    UI.iconCdn = d.itemIconCdn || UI.iconCdn;
+    UI.actionsEnabled = d.actionsEnabled !== false;
+    state.readOnly = d.readOnly === true;
+    var tag = document.getElementById("roTag");
+    if (tag) tag.classList.toggle("hide", !state.readOnly);
+    if (UI.iconMode === "honghemc") loadIconMap();
+    if (state.detail) renderInventory();
+  }).catch(function () {});
+}
+
+/**
+ * 拉物品名 -> 图片路径 的映射表（22 KB，浏览器缓存一天）。
+ *
+ * 服务器只是把 jar 里的 gzip 字节原样吐出来，不解析、不建表 ——
+ * 所以这张表不占服务器任何常驻内存。
+ */
+function loadIconMap() {
+  fetch("/api/iconmap", { credentials: "same-origin" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (m) {
+      if (!m) return;
+      UI.iconMap = m;
+      if (state.detail) renderInventory();
+    })
+    .catch(function () {});
+}
+
+var SVGNS = 'xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"';
+
+/**
+ * 物品图标用内联 SVG 手画，不从外部图床拉。
+ *
+ * 原因：实测国内能连到的物品图床基本都挂了（mc-heads 403、jsdelivr/raw.githubusercontent 直接不通）。
+ * 依赖外部服务的直接后果就是「别人一挂，你的面板全是空白」。
+ * 手画的不还原，但胜在：零依赖、零版权风险、离线可用、瞬间渲染。
+ * 真想用真实贴图，把 web.item-icons 改成 cdn 并自己填一个能访问的地址。
+ */
+var SVG_SHAPE = {
+  sword: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<line x1="19.5" y1="4" x2="9.5" y2="14" stroke="' + c + '" stroke-width="4.2" stroke-linecap="round"/>' +
+      '<line x1="7.5" y1="12.5" x2="11.5" y2="16.5" stroke="#8a5a30" stroke-width="2.2" stroke-linecap="round"/>' +
+      '<line x1="8.5" y1="16" x2="5" y2="19.5" stroke="#5c3a1e" stroke-width="2.8" stroke-linecap="round"/>' +
+      '</svg>';
+  },
+  pickaxe: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<line x1="6.5" y1="17.5" x2="16" y2="8" stroke="#8a5a30" stroke-width="2.4" stroke-linecap="round"/>' +
+      '<path d="M11 3 C16 3.5 20.5 8 21 13" fill="none" stroke="' + c + '" stroke-width="3.2" stroke-linecap="round"/>' +
+      '</svg>';
+  },
+  axe: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<line x1="7" y1="18" x2="15.5" y2="9" stroke="#8a5a30" stroke-width="2.4" stroke-linecap="round"/>' +
+      '<path d="M13 3.5 L20.5 6 L20.5 12.5 L13 10 Z" fill="' + c +
+      '" stroke="rgba(0,0,0,.28)" stroke-width=".7" stroke-linejoin="round"/>' +
+      '</svg>';
+  },
+  shovel: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<line x1="7.5" y1="17.5" x2="14" y2="11" stroke="#8a5a30" stroke-width="2.4" stroke-linecap="round"/>' +
+      '<rect x="14" y="3" width="7.5" height="7.5" rx="2" transform="rotate(45 17.75 6.75)" fill="' + c +
+      '" stroke="rgba(0,0,0,.25)" stroke-width=".7"/>' +
+      '</svg>';
+  },
+  hoe: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<line x1="7" y1="18.5" x2="16.5" y2="9" stroke="#8a5a30" stroke-width="2.4" stroke-linecap="round"/>' +
+      '<path d="M14.5 7 L21 7 L21 10.5 L14.5 10.5 Z" fill="' + c + '" stroke="rgba(0,0,0,.28)" stroke-width=".7"/>' +
+      '</svg>';
+  },
+  armor: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<path d="M12 3 L18 5 L18.5 11 C18.5 15.5 15.5 18.5 12 20.5 C8.5 18.5 5.5 15.5 5.5 11 L6 5 Z" fill="' + c +
+      '" stroke="rgba(0,0,0,.3)" stroke-width=".8"/>' +
+      '<path d="M9 8.5 L15 8.5" stroke="rgba(255,255,255,.4)" stroke-width="1.2" stroke-linecap="round"/>' +
+      '</svg>';
+  },
+  potion: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<rect x="10" y="2.5" width="4" height="3.5" rx=".8" fill="#94a3b8"/>' +
+      '<path d="M9 7 L15 7 L15 12.5 C15 17.5 13.5 20.5 12 20.5 C10.5 20.5 9 17.5 9 12.5 Z" fill="' + c +
+      '" stroke="rgba(0,0,0,.2)" stroke-width=".7"/>' +
+      '</svg>';
+  },
+  food: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<circle cx="12" cy="13.5" r="6.8" fill="' + c + '"/>' +
+      '<path d="M12 6.5 C12.5 3.8 15 2.8 17 3.2" fill="none" stroke="#65a30d" stroke-width="1.8" stroke-linecap="round"/>' +
+      '</svg>';
+  },
+  block: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<path d="M12 2.5 L20.5 7 L12 11.5 L3.5 7 Z" fill="' + c + '" fill-opacity=".95"/>' +
+      '<path d="M3.5 7 L12 11.5 L12 21 L3.5 16.5 Z" fill="' + c + '" fill-opacity=".72"/>' +
+      '<path d="M20.5 7 L12 11.5 L12 21 L20.5 16.5 Z" fill="' + c + '" fill-opacity=".52"/>' +
+      '</svg>';
+  },
+  ore: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<path d="M12 2.5 L20.5 7 L12 11.5 L3.5 7 Z" fill="' + c + '" fill-opacity=".9"/>' +
+      '<path d="M3.5 7 L12 11.5 L12 21 L3.5 16.5 Z" fill="' + c + '" fill-opacity=".7"/>' +
+      '<path d="M20.5 7 L12 11.5 L12 21 L20.5 16.5 Z" fill="' + c + '" fill-opacity=".5"/>' +
+      '<circle cx="7.5" cy="13" r="1.1" fill="rgba(255,255,255,.8)"/>' +
+      '<circle cx="15" cy="9.5" r="1" fill="rgba(255,255,255,.8)"/>' +
+      '<circle cx="16.5" cy="14.5" r=".9" fill="rgba(255,255,255,.65)"/>' +
+      '</svg>';
+  },
+  gem: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<path d="M6 13.5 L9 7 L15 7 L18 13.5 L12 19.5 Z" fill="' + c +
+      '" stroke="rgba(0,0,0,.28)" stroke-width=".8" stroke-linejoin="round"/>' +
+      '<path d="M9 7 L12 12.5 L15 7" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1"/>' +
+      '<path d="M6.5 13.5 L17.5 13.5" stroke="rgba(255,255,255,.3)" stroke-width=".9"/>' +
+      '</svg>';
+  },
+  bucket: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<path d="M6 8.5 L18 8.5 L16 20.5 L8 20.5 Z" fill="' + c +
+      '" stroke="rgba(0,0,0,.25)" stroke-width=".7" stroke-linejoin="round"/>' +
+      '<rect x="5" y="6" width="14" height="3" rx="1.5" fill="#cbd5e1"/>' +
+      '</svg>';
+  },
+  bow: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<path d="M7 3.5 C17.5 7 17.5 17 7 20.5" fill="none" stroke="' + c +
+      '" stroke-width="2.6" stroke-linecap="round"/>' +
+      '<line x1="7" y1="4.5" x2="7" y2="19.5" stroke="#e2e8f0" stroke-width="1.1"/>' +
+      '<line x1="7.5" y1="12" x2="18" y2="12" stroke="#cbd5e1" stroke-width="1.1" stroke-dasharray="3 2"/>' +
+      '</svg>';
+  },
+  default: function (c) {
+    return '<svg ' + SVGNS + '>' +
+      '<rect x="4.5" y="4.5" width="15" height="15" rx="3.5" fill="' + c +
+      '" stroke="rgba(0,0,0,.22)" stroke-width=".8"/>' +
+      '</svg>';
+  }
+};
+
+/** 按物品名猜形状。顺序有讲究：先具体的，再笼统的。 */
+function itemShape(type) {
+  var t = (type || "").toUpperCase();
+  if (/SWORD/.test(t)) return "sword";
+  if (/PICKAXE/.test(t)) return "pickaxe";
+  if (/SHOVEL|SPADE/.test(t)) return "shovel";
+  if (/(_AXE$|^AXE$)/.test(t)) return "axe";
+  if (/(_HOE$|^HOE$)/.test(t)) return "hoe";
+  if (/(HELMET|CHESTPLATE|LEGGINGS|BOOTS|SHIELD|ELYTRA)/.test(t)) return "armor";
+  if (/POTION/.test(t)) return "potion";
+  if (/(APPLE|BREAD|BEEF|PORK|CHICKEN|MUTTON|RABBIT|FISH|SALMON|COD|CARROT|POTATO|BEETROOT|COOKED|STEW|SOUP|CAKE|COOKIE|MELON|BERRIES|PUMPKIN_PIE)/.test(t)) return "food";
+  if (/_ORE$|_ORE_/.test(t)) return "ore";
+  if (/(_BLOCK$|_LOG$|_WOOD$|_PLANKS$|_WOOL$|CONCRETE|TERRACOTTA|^SAND$|^DIRT$|^STONE$|COBBLESTONE|GRAVEL|^GLASS$|OBSIDIAN|NETHERRACK|END_STONE|BEDROCK|_BRICKS$)/.test(t)) return "block";
+  if (/BUCKET/.test(t)) return "bucket";
+  if (/(BOW|ARROW|CROSSBOW|TRIDENT)/.test(t)) return "bow";
+  if (/(_INGOT$|_NUGGET$|DIAMOND$|EMERALD$|^COAL$|REDSTONE$|LAPIS|QUARTZ$|AMETHYST)/.test(t)) return "gem";
+  return "default";
+}
+
+function itemSvg(type, color) {
+  var fn = SVG_SHAPE[itemShape(type)] || SVG_SHAPE["default"];
+  return fn(color || "#64748b");
+}
+
+/** cdn 模式加载失败时的兜底。 */
+function iconFallback(img) {
+  var t = img.getAttribute("data-t") || "";
+  var c = img.getAttribute("data-c") || "#64748b";
+  img.outerHTML = itemSvg(t, c);
+}
+
+/** 格子里面画什么（不含外框和数量角标）。 */
+function slotInner(it) {
+  var color = itemColor(it.type);
+  if (UI.iconMode === "none") {
+    return '<span class="lbl" style="color:' + color + '">' +
+      esc((it.cn || it.type).slice(0, 2)) + "</span>";
+  }
+  if (UI.iconMode === "honghemc") {
+    // 映射表里查得到就用真图；查不到（新版本物品 / 没收录）直接画 SVG，不留白格
+    var rel = UI.iconMap ? UI.iconMap[it.type] : null;
+    if (rel) {
+      return '<img src="' + esc(UI.iconBase + rel + ".webp") + '" alt="" loading="lazy" ' +
+        'data-t="' + esc(it.type) + '" data-c="' + color + '" onerror="iconFallback(this)">';
+    }
+    return itemSvg(it.type, color);
+  }
+  if (UI.iconMode === "cdn") {
+    var url = UI.iconCdn.replace("{item}", String(it.type).toLowerCase());
+    return '<img src="' + esc(url) + '" alt="" loading="lazy" data-t="' + esc(it.type) +
+      '" data-c="' + color + '" onerror="iconFallback(this)">';
+  }
+  return itemSvg(it.type, color);
+}
+
+function slotHtml(it, slot) {
+  // AIR 也要当空处理：主手空着时后端拿到的是 AIR 的 ItemStack，不是 null
+  if (!it || !it.type || it.type === "AIR" || it.amount <= 0) {
+    return '<div class="slot empty"' + (slot != null ? ' data-slot="' + slot + '"' : "") + "></div>";
+  }
+  var title = (it.custom ? it.custom + " (" + it.cn + ")" : it.cn) + " × " + it.amount;
+  // 给了槽位号就说明这一格可以点着拿走（「操作 → 拿走某格」）
+  var click = (slot != null) ? ' data-slot="' + slot + '" onclick="takeSlot(' + slot + ')"' : "";
+  return '<div class="slot' + (slot != null ? " takeable" : "") + '" title="' +
+    esc(title) + '"' + click + ">" + slotInner(it) +
+    (it.amount > 1 ? '<span class="n">' + it.amount + "</span>" : "") + "</div>";
+}
+
+/** 「操作 → 拿走某格」：点背包格子触发。 */
+function takeSlot(slot) {
+  if (!confirm("拿走第 " + slot + " 格的物品？\n\n物品会直接消失，无法找回。")) return;
+  act("takeslot", String(slot));
+}
+
+/** 带下方文字标签的格子，用于装备栏（要写明主手/副手）。 */
+function cellHtml(it, label) {
+  return '<div class="cell">' + slotHtml(it) +
+    '<div class="slabel">' + esc(label) + "</div></div>";
+}
+
+function renderInventory() {
+  var box = $("#dInvBox");
+  if (!box || !state.detail) return;
+  var d = state.detail;
+
+  var byslot = {};
+  (d.inventory || []).forEach(function (it) { byslot[it.slot] = it; });
+  var armorSlot = {};
+  (d.armor || []).forEach(function (it) { armorSlot[it.slot] = it; });
+
+  var html = "";   // 上面已经有「背包」标题了，这里不再重复一遍
+
+  // 主背包：槽位 9~35 三行，再下面是快捷栏 0~8
+  html += '<div class="invlabel">主背包</div><div class="inv">';
+  for (var i = 9; i < 36; i++) html += slotHtml(byslot[i]);
+  html += "</div>";
+  html += '<div class="invlabel">快捷栏</div><div class="inv">';
+  for (var j = 0; j < 9; j++) html += slotHtml(byslot[j]);
+  html += "</div>";
+
+  // 装备栏单独用 6 列：4 件穿戴 + 主手 + 副手。用 9 列的话每格只有 1/9 宽，太小看不清，
+  // 而且格子和格子之间分不清哪个是手哪个是盔甲。
+  html += '<div class="invlabel">装备与手持</div><div class="inv6">';
+  html += cellHtml(armorSlot[3], "头盔");
+  html += cellHtml(armorSlot[2], "胸甲");
+  html += cellHtml(armorSlot[1], "护腿");
+  html += cellHtml(armorSlot[0], "靴子");
+  html += cellHtml(d.hand, "主手");
+  html += cellHtml(d.offhand, "副手");
+  html += "</div>";
+
+  if (d.nearby) {
+    html += '<div class="kv" style="margin-top:8px"><span>周围 ' + d.nearby.radius + ' 格</span>' +
+      '<span class="v">' + d.nearby.total + " 实体（掉落物 " + d.nearby.items +
+      " / 生物 " + d.nearby.mobs + "）</span></div>";
+  }
+
+  box.innerHTML = html;
+
+  // 装备格的数据也在 /api/player 里（armor / hand / offhand），一起刷
+  var _p = findPlayer(state.snapshot);
+  if (_p) renderArmorSlots(_p);
+}
+
+/* ───────────── 玩家最近事件 ───────────── */
+var playerEvents = [];
+function loadPlayerEvents() {
+  if (!state.selected) return;
+  var p = findPlayer(state.snapshot);
+  var name = p ? p.name : "";
+  if (!name) return;
+  api("/api/events?limit=60&player=" + encodeURIComponent(name))
+    .then(function (d) {
+      if (d && d.ok) { playerEvents = d.events; renderPlayerEvents(); }
+    }).catch(function () {});
+}
+function renderPlayerEvents() {
+  var box = $("#dEvents");
+  if (!box) return;
+  if (!playerEvents.length) { box.innerHTML = '<div class="empty small">没有记录</div>'; return; }
+  box.innerHTML = playerEvents.slice(0, 40).map(function (a) {
+    return '<div class="kv"><span class="small muted">' + hhmmss(a.t) + "</span>" +
+      '<span class="v small">' + actionLabel(a.type) + " " + esc(a.detail) + "</span></div>";
+  }).join("");
+}
+
+/* ───────────── 操作 ───────────── */
+function act(name, arg1, arg2) {
+  if (state.readOnly) {
+    toast("这是只读分享链接，不能操作", "err");
+    return;
+  }
+  if (!state.selected) return;
+  doAction({ action: name, uuid: state.selected, arg1: arg1 || "", arg2: arg2 || "" });
+}
+
+function doAction(payload) {
+  postAction(payload).then(function (d) {
+    if (d && d.ok) {
+      toast(d.msg || "完成", "ok", d.undo);
+      setTimeout(pollSnapshot, 300);
+      setTimeout(loadPlayerDetail, 500);
+    } else {
+      toast((d && d.error) || "操作失败", "err");
+    }
+  }).catch(function (e) {
+    if (e && e.message === "unauthorized") return;
+    toast("请求失败", "err");
+  });
+}
+
+function actMessage(inputId) {
+  var el = document.getElementById(inputId || "acMsg");
+  var v = el ? el.value.trim() : "";
+  if (!v) { toast("消息不能为空", "err"); return; }
+  act("message", v);
+  if (el) el.value = "";
+}
+function actGamemode(selId) {
+  var el = document.getElementById(selId || "acGm");
+  if (el) act("gamemode", el.value);
+}
+function actTeleport(inputId) {
+  var el = document.getElementById(inputId || "acTp");
+  var v = el ? el.value.trim() : "";
+  if (!v) { toast("请输入坐标，例如 100 64 200", "err"); return; }
+  act("teleport", "", v);
+}
+function actKick(inputId) {
+  var el = document.getElementById(inputId || "acKick");
+  var reason = el ? el.value.trim() : "";
+  if (!confirm("确定踢出这个玩家？" + (reason ? "\n原因：" + reason : ""))) return;
+  act("kick", reason);
+}
+function actBan() {
+  if (!confirm("确定封禁这个玩家？\n\n这是不可逆操作，需要在服务器执行 /pardon 才能解除。")) return;
+  act("ban", "");
+}
+
+/* ───────────── 新增的操作 ───────────── */
+
+/** 药水效果选项：[英文键, 中文名]。键名用 Bukkit 的常量名，服务端会自己兼容新旧叫法。 */
+var EFFECTS = [
+  ["SPEED", "速度"], ["JUMP_BOOST", "跳跃提升"], ["HASTE", "急迫"],
+  ["STRENGTH", "力量"], ["RESISTANCE", "抗性提升"], ["REGENERATION", "生命恢复"],
+  ["HEALTH_BOOST", "生命提升"], ["ABSORPTION", "伤害吸收"], ["FIRE_RESISTANCE", "抗火"],
+  ["WATER_BREATHING", "水下呼吸"], ["NIGHT_VISION", "夜视"], ["INVISIBILITY", "隐身"],
+  ["SLOW_FALLING", "缓降"], ["SLOWNESS", "缓慢"], ["WEAKNESS", "虚弱"],
+  ["POISON", "中毒"], ["BLINDNESS", "失明"], ["LEVITATION", "漂浮"]
+];
+
+/** 音效选项：[声音键, 中文名]。用 1.9+ 的点分命名，各版本都认。 */
+var SOUNDS = [
+  ["entity.player.levelup", "升级"],
+  ["entity.experience_orb.pickup", "捡经验"],
+  ["block.note_block.pling", "音符盒"],
+  ["ui.button.click", "按钮点击"],
+  ["entity.villager.no", "村民摇头"],
+  ["entity.ender_dragon.growl", "末影龙吼"],
+  ["entity.lightning_bolt.thunder", "雷声"],
+  ["entity.ghast.scream", "恶魂尖叫"]
+];
+
+/** 操作页里的一行：标签 + 控件 + 按钮。 */
+function opRow(label, inner, buttons) {
+  return '<div class="ofm"><label>' + label + '</label>' +
+    '<div class="ofin">' + (inner || "") + "</div>" +
+    '<div class="obtn">' + (buttons || "") + "</div></div>";
+}
+
+function ov(id) {
+  var el = document.getElementById(id);
+  return el ? el.value.trim() : "";
+}
+
+function oi(id, def) {
+  var n = parseInt(ov(id), 10);
+  return isNaN(n) ? def : n;
+}
+
+function actGiveEffect() {
+  var key = ov("qacEff");
+  var secs = oi("qacEffSec", 60);
+  var lv = oi("qacEffLv", 1);
+  if (secs < 1 || secs > 3600) { toast("秒数要在 1~3600 之间", "err"); return; }
+  if (lv < 1 || lv > 10) { toast("等级要在 1~10 之间", "err"); return; }
+  act("giveeffect", key, secs + ":" + (lv - 1));
+}
+
+function actExp() {
+  var lv = oi("qacExp", -1);
+  if (lv < 0) { toast("请填等级", "err"); return; }
+  act("exp", String(lv));
+}
+
+function actFly() {
+  act("fly", ov("qacFly"));
+}
+
+function actClearInv() {
+  if (!confirm("确定清空这个玩家的背包？\n\n盔甲、副手、快捷栏都会一起清掉，无法撤销。")) return;
+  act("clearinv", "");
+}
+
+var itemsLoaded = false;
+function loadItems() {
+  if (itemsLoaded) return;
+  itemsLoaded = true;
+  api("/api/items").then(function (d) {
+    if (!d || !d.ok) return;
+    var list = document.getElementById("opItems");
+    if (!list) return;
+    var html = [];
+    (d.items || []).forEach(function (it) {
+      html.push('<option value="' + esc(it.n) + '">' + esc(it.c) + "</option>");
+    });
+    list.innerHTML = html.join("");
+  }).catch(function () { itemsLoaded = false; });
+}
+
+function actGiveItem() {
+  var name = ov("qacItem");
+  var n = oi("qacItemN", 1);
+  if (!name) { toast("请填物品名", "err"); return; }
+  if (n < 1 || n > 2304) { toast("数量要在 1~2304 之间", "err"); return; }
+  act("giveitem", name, String(n));
+  var el = document.getElementById("qacItem");
+  if (el) el.value = "";
+}
+
+function actItemNear() {
+  var r = oi("qacNearR", 16);
+  if (r < 1 || r > 64) { toast("半径要在 1~64 之间", "err"); return; }
+  act("itemnear", String(r));
+}
+
+function actTpPlayer() {
+  var to = ov("qacTo");
+  if (!to) { toast("请填另一个玩家的名字", "err"); return; }
+  act("tpplayer", to);
+}
+
+function actTitle() {
+  var a = ov("qacTitle");
+  var b = ov("qacSub");
+  if (!a && !b) { toast("标题不能为空", "err"); return; }
+  act("title", a, b);
+}
+
+function actActionBar() {
+  var a = ov("qacBar");
+  if (!a) { toast("内容不能为空", "err"); return; }
+  act("actionbar", a);
+}
+
+function actSound() {
+  act("sound", ov("qacSound"));
+}
+
+function actMute() {
+  var m = oi("qacMute", -1);
+  if (m < 0) { toast("请填分钟数（0 = 解除）", "err"); return; }
+  act("mute", String(m));
+}
+
+function actWhitelist(mode) {
+  if (mode === "remove" && !confirm("确定把这个玩家移出白名单？\n\n如果白名单是开着的，他下次就进不来了。")) return;
+  act("whitelist", mode);
+}
+
+function actWhitelistToggle() {
+  if (!confirm("切换整个服务器的白名单开关？\n\n开启后只有白名单里的玩家能进服。")) return;
+  act("whitelist", "toggle");
+}
+
+function actOp(on) {
+  var tip = on === "on"
+    ? "确定给这个玩家 OP？\n\nOP = 服务器管理员权限，能执行任何命令、改任何东西。"
+    : "确定撤销这个玩家的 OP？";
+  if (!confirm(tip)) return;
+  act("op", on);
+}
+
+function actMoney(mode) {
+  var amount = ov("qacMoney");
+  if (!amount) { toast("请填金额", "err"); return; }
+  if (mode === "take" && !confirm("确定扣掉 " + amount + " ？")) return;
+  act("econ", mode, amount);
+}
+
+/* ───────────── 曲线 ───────────── */
+function pushPoint(s) {
+  state.hist.tps.push(s.tps);
+  state.hist.mem.push(s.memUsed);
+  state.hist.mspt.push(s.mspt == null ? null : s.mspt);
+  ["tps", "mem", "mspt"].forEach(function (k) {
+    while (state.hist[k].length > MAX_POINTS) state.hist[k].shift();
+  });
+  // 曲线只在概览页可见，别的 Tab 上画画是白费 CPU
+  if (state.tab === "overview") redrawAll();
+}
+
+function loadHistory() {
+  api("/api/history").then(function (d) {
+    if (!d || !d.ok) return;
+    d.rows.forEach(function (r) {
+      state.hist.tps.push(r[1]);
+      state.hist.mem.push(r[3]);
+      state.hist.mspt.push(r[2] < 0 ? null : r[2]);
+    });
+    redrawAll();
+  }).catch(function () {});
+}
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/**
+ * 手绘折线。不用图表库：需求就三条线，引一个 100KB 的库不值当，
+ * 而且 canvas 自己画能完全控制配色，跟随主题切换。
+ */
+function drawChart(id, data, opt) {
+  var cv = document.getElementById(id);
+  if (!cv) return;
+  var dpr = window.devicePixelRatio || 1;
+  var w = cv.clientWidth || 300;
+  var h = parseInt(cv.getAttribute("height"), 10) || 90;
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(h * dpr);
+  var ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  var line = cssVar("--line");
+  var pts = data.filter(function (v) { return v != null && isFinite(v); });
+  if (pts.length < 2) {
+    ctx.fillStyle = cssVar("--muted");
+    ctx.font = "12px system-ui";
+    ctx.fillText("收集数据中…", 8, h / 2 + 4);
+    return;
+  }
+
+  var max = opt.max || Math.max.apply(null, pts) * 1.15;
+  if (max <= 0) max = 1;
+
+  ctx.strokeStyle = line;
+  ctx.lineWidth = 1;
+  for (var g = 1; g <= 2; g++) {
+    var gy = h - (h * g / 3);
+    ctx.beginPath();
+    ctx.moveTo(0, gy);
+    ctx.lineTo(w, gy);
+    ctx.stroke();
+  }
+
+  var stepX = w / Math.max(1, data.length - 1);
+  var toY = function (v) {
+    var y = h - (v / max) * (h - 4) - 2;
+    return Math.max(0, Math.min(h, y));
+  };
+
+  ctx.strokeStyle = opt.color;
+  ctx.lineWidth = 1.8;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  var started = false;
+  for (var i = 0; i < data.length; i++) {
+    var v = data[i];
+    if (v == null || !isFinite(v)) { started = false; continue; }
+    var x = i * stepX, y = toY(v);
+    if (!started) { ctx.moveTo(x, y); started = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  if (opt.fill) {
+    var grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, opt.color + "33");
+    grad.addColorStop(1, opt.color + "00");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    var any = false;
+    for (var j = 0; j < data.length; j++) {
+      var vv = data[j];
+      if (vv == null || !isFinite(vv)) continue;
+      ctx.lineTo(j * stepX, toY(vv));
+      any = true;
+    }
+    if (any) {
+      ctx.lineTo((data.length - 1) * stepX, h);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  ctx.fillStyle = cssVar("--muted");
+  ctx.font = "10px system-ui";
+  ctx.fillText(Math.round(max) + "", 4, 11);
+}
+
+function redrawAll() {
+  drawChart("cTps", state.hist.tps, { max: 20, color: "#0d9488", fill: true });
+  drawChart("cMem", state.hist.mem, { color: "#6366f1", fill: true });
+  drawChart("cMspt", state.hist.mspt, { color: "#f59e0b", fill: false });
+}
+window.addEventListener("resize", redrawAll);
+
+/* ───────────── 事件 ───────────── */
+function loadEvents() {
+  // 「操作日志」只看游戏里干了什么；聊天框那些消息在「聊天」页签，别混进来
+  api("/api/events?limit=120&types=" + LOG_TYPES.join(",")).then(function (d) {
+    if (!d || !d.ok) return;
+    state.events = d.events;
+    state.lastId = Math.max(state.lastId, d.maxId || 0);
+    renderEvents();
+  }).catch(function () {});
+}
+
+function onFilter() {
+  var on = document.querySelector(".chip.on");
+  state.filter.type = on && on.dataset ? (on.dataset.type || "") : "";
+  state.filter.player = $("#fPlayer").value.trim();
+  state.filter.keyword = $("#fKeyword").value.trim();
+  if (!state.filter.player && !state.filter.keyword && !state.filter.type) {
+    loadEvents();
+    return;
+  }
+  var q = new URLSearchParams({ limit: 200 });
+  if (state.filter.type) q.set("type", state.filter.type);
+  if (state.filter.player) q.set("player", state.filter.player);
+  if (state.filter.keyword) q.set("keyword", state.filter.keyword);
+  api("/api/events?" + q.toString()).then(function (d) {
+    if (d && d.ok) { state.events = d.events; renderEvents(); }
+  }).catch(function () {});
+}
+
+function clearFilter() {
+  state.filter = { type: "", player: "", keyword: "" };
+  $("#fPlayer").value = "";
+  $("#fKeyword").value = "";
+  document.querySelectorAll(".chip[data-type]").forEach(function (b) {
+    b.classList.toggle("on", b.dataset.type === "");
+  });
+  loadEvents();
+}
+
+document.querySelectorAll(".chip[data-type]").forEach(function (b) {
+  b.addEventListener("click", function () {
+    document.querySelectorAll(".chip[data-type]").forEach(function (x) {
+      x.classList.remove("on");
+    });
+    b.classList.add("on");
+    onFilter();
+  });
+});
+
+function addEvent(a) {
+  // 世界消息单独存一份：它不受「操作日志」页签上的筛选影响
+  if (chatTypes().indexOf(a.type) >= 0) {
+    state.chat.unshift(a);
+    while (state.chat.length > MAX_CHAT_ROWS) state.chat.pop();
+    if (state.tab === "chat") renderChat();
+  }
+
+  if (matchesFilter(a) && isLogEvent(a)) {
+    state.events.unshift(a);
+    while (state.events.length > MAX_EVENTS) state.events.pop();
+    renderEvents();
+  }
+
+  if (state.selected) {
+    var p = findPlayer(state.snapshot);
+    if (p && p.name === a.player) {
+      playerEvents.unshift(a);
+      while (playerEvents.length > 60) playerEvents.pop();
+      renderPlayerEvents();
+      // 详情页「日志」页签：跟着当前筛选条件走
+      if (matchesPlayerLog(a)) {
+        pageEvents.unshift(a);
+        while (pageEvents.length > 100) pageEvents.pop();
+        renderPageEvents();
+      }
+    }
+  }
+}
+
+/** 详情页日志的筛选：类型 + 关键词。 */
+function matchesPlayerLog(a) {
+  var f = state.plog;
+  if (f.type && a.type !== f.type) return false;
+  if (f.keyword && (a.detail || "").toLowerCase().indexOf(f.keyword) < 0) return false;
+  return true;
+}
+
+function matchesFilter(a) {
+  var f = state.filter;
+  if (f.type && a.type !== f.type) return false;
+  if (f.player && a.player.toLowerCase().indexOf(f.player.toLowerCase()) < 0) return false;
+  if (f.keyword && (a.detail || "").toLowerCase().indexOf(f.keyword.toLowerCase()) < 0) return false;
+  return true;
+}
+
+function renderEvents() {
+  var box = $("#elist");
+  $("#evCount").textContent = state.events.length ? "(" + state.events.length + ")" : "";
+  if (!state.events.length) {
+    box.innerHTML = '<div class="empty">暂无操作记录</div>';
+    return;
+  }
+  box.innerHTML = state.events.map(function (a) {
+    var pos = a.world
+      ? '<span class="epos">' + esc(a.world) + " " + a.x + "," + a.y + "," + a.z + "</span>"
+      : '<span class="epos"></span>';
+    return '<div class="erow">' +
+      '<span class="et">' + hhmmss(a.t) + "</span>" +
+      '<span class="ep">' + esc(a.player) + "</span>" +
+      '<span class="etag t-' + a.type + '">' + actionLabel(a.type) + "</span>" +
+      '<span class="ed">' + esc(a.detail) + "</span>" +
+      pos +
+      "</div>";
+  }).join("");
+}
+
+/* ───────────── 世界消息（聊天框） ───────────── */
+var MAX_CHAT_ROWS = 200;
+
+/** 聊天框类的消息类型 —— 它们只进「聊天」页签，不进「操作日志」。 */
+var MESSAGE_TYPES = ["CHAT", "WORLD", "BROADCAST", "PLUGIN"];
+
+/** 「操作日志」收的类型：全是游戏内实际发生的事。 */
+var LOG_TYPES = ["BREAK", "PLACE", "CONTAINER", "CONTAINER_CLICK",
+  "COMMAND", "DEATH", "JOIN", "QUIT", "ADMIN"];
+
+function isLogEvent(a) {
+  return MESSAGE_TYPES.indexOf(a.type) < 0;
+}
+
+/** 页签上的分组 —— 「系统」把服务器输出、广播、进出、死亡合成一类。 */
+var CHAT_GROUPS = {
+  all: ["CHAT", "WORLD", "BROADCAST", "PLUGIN", "ALERT", "JOIN", "QUIT", "DEATH", "COMMAND"],
+  player: ["CHAT"],
+  sys: ["WORLD", "BROADCAST", "JOIN", "QUIT", "DEATH", "ALERT"],
+  plugin: ["PLUGIN"],
+  cmd: ["COMMAND"]
+};
+
+function chatTypes() {
+  return CHAT_GROUPS[state.chatGroup] || CHAT_GROUPS.all;
+}
+
+function setChatGroup(g) {
+  state.chatGroup = g;
+  document.querySelectorAll("#chatFilters .chip").forEach(function (b) {
+    b.classList.toggle("on", (b.getAttribute("data-group") || "all") === g);
+  });
+  loadChat();
+}
+
+function loadChat() {
+  api("/api/events?limit=" + MAX_CHAT_ROWS + "&types=" + chatTypes().join(",")).then(function (d) {
+    if (!d || !d.ok) return;
+    state.chat = d.events || [];
+    renderChat();
+  }).catch(function () {});
+}
+
+function renderChat() {
+  var box = $("#chatList");
+  if (!box) return;
+  var q = ($("#chatSearch").value || "").trim().toLowerCase();
+  var list = state.chat;
+  if (q) {
+    list = list.filter(function (a) {
+      return (a.player || "").toLowerCase().indexOf(q) >= 0 ||
+        (a.detail || "").toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  var cnt = $("#chatCount");
+  if (cnt) cnt.textContent = list.length ? "(" + list.length + ")" : "";
+  if (!list.length) {
+    box.innerHTML = '<div class="empty">' + (q ? "没有匹配的消息" : "还没有消息") + "</div>";
+    return;
+  }
+  box.innerHTML = list.map(function (a) {
+    var who = a.player || "";
+    // 「服务器」这种来源不用加粗，视觉上要弱一档
+    var cls = (a.type === "WORLD" || a.type === "BROADCAST") ? "cn sys" : "cn";
+    return '<div class="chatrow">' +
+      '<span class="ct">' + hhmmss(a.t) + "</span>" +
+      '<span class="etag t-' + a.type + '">' + actionLabel(a.type) + "</span>" +
+      '<span class="' + cls + '">' + esc(who) + "</span>" +
+      '<span class="cm">' + esc(a.detail) + "</span>" +
+      "</div>";
+  }).join("");
+}
+
+/* ───────────── 实时推送 ───────────── */
+var sseRetry = null;
+function connectSse() {
+  if (window.__es) { try { window.__es.close(); } catch (e) {} }
+  if (sseRetry) { clearTimeout(sseRetry); sseRetry = null; }
+
+  var es = new EventSource("/api/stream?lastId=" + state.lastId);
+  window.__es = es;
+
+  es.onopen = function () { setConn(true); };
+  es.onmessage = function (ev) {
+    var d;
+    try { d = JSON.parse(ev.data); } catch (e) { return; }
+    if (d && d.event) {
+      state.lastId = Math.max(state.lastId, d.event.id);
+      addEvent(d.event);
+    }
+  };
+  es.onerror = function () {
+    setConn(false);
+    try { es.close(); } catch (e) {}
+    if (!sseRetry) sseRetry = setTimeout(connectSse, 3000);
+  };
+}
+
+function setConn(ok) {
+  $("#connDot").classList.toggle("on", ok);
+  $("#connText").textContent = ok ? "实时连接" : "连接断开";
+}
+
+/* ───────────── 启动 ───────────── */
+(function init() {
+  var t = "light";
+  try { t = localStorage.getItem("tw_theme") || "light"; } catch (e) {}
+  applyTheme(t);
+
+  var hash = (location.hash || "").replace("#", "");
+  if (hash.indexOf("player/") === 0) {
+    state.selected = decodeURIComponent(hash.substring(7));
+    state.tab = "player";
+  } else if (["overview", "players", "chat", "logs", "world", "plugin", "bans", "system"]
+      .indexOf(hash) >= 0) {
+    state.tab = hash;
+  }
+  document.querySelectorAll(".tab").forEach(function (b) {
+    b.addEventListener("click", function () {
+      switchTab(b.getAttribute("data-tab"));
+    });
+  });
+  document.querySelectorAll("#chatFilters .chip").forEach(function (b) {
+    b.addEventListener("click", function () {
+      setChatGroup(b.getAttribute("data-group") || "all");
+    });
+  });
+  ["overview", "players", "chat", "logs", "world", "plugin", "bans", "system", "player"]
+    .forEach(function (k) {
+    var el = document.getElementById("pane-" + k);
+    if (el) el.classList.toggle("hide", k !== state.tab);
+  });
+
+  fetch("/api/snapshot", { credentials: "same-origin" }).then(function (r) {
+    if (r.status === 401) { showLogin(); return; }
+    showPanel();
+    boot();
+  }).catch(function () { showLogin(); });
+})();
+</script>
+</body>
+</html>
