@@ -127,7 +127,10 @@ public final class TinyWatch extends JavaPlugin {
             getLogger().info("操作日志 : 已关闭");
         }
         getLogger().info("支持版本 : 1.13 ~ 26.x（纯 Bukkit API，不用 NMS）");
-        getLogger().info("只读监控，不会修改世界、不会踢人、不会自动清理。");
+        // 别再说「只读」了：v1.1 起网页能做 22 项操作，包括踢人、封禁、清实体。
+        // 写清楚状态和边界，免得上管理员误以为这插件碰不了人。
+        getLogger().info("网页操作 : " + (settings.actionsEnabled
+                ? "已开启（按组开关，全部写审计日志）" : "已关闭"));
         getLogger().info("=====================================================");
     }
 
