@@ -37,6 +37,14 @@ public final class TinyWatch extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+
+        // 老版本的 config.yml 不会自动长出新项，这里按内置模板补一遍（先备份、校验通过才写）
+        String migrated = com.tinyaii.tinywatch.config.ConfigMigrator.migrate(this);
+        if (migrated != null) {
+            reloadConfig();
+            getLogger().info("[配置升级] 已把 config.yml 升到新版结构（原文件备份为 config.yml.bak）。" + migrated);
+        }
+
         settings = new Settings(getConfig());
 
         // 密码留空就自动生成一个：默认有密码，比默认没密码安全得多

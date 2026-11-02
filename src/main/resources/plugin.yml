@@ -1,5 +1,5 @@
 name: TinyWatch
-version: 1.1.0
+version: 1.1.1
 main: com.tinyaii.tinywatch.TinyWatch
 api-version: '1.13'
 author: TinyAII
